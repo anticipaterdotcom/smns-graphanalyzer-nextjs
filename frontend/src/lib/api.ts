@@ -22,6 +22,7 @@ export interface UploadResponse {
 export interface AnalyzeResponse {
   extrema: Extremum[];
   count: number;
+  column_data: number[];
 }
 
 export interface PatternEvent {

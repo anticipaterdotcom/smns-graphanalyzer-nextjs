@@ -117,9 +117,11 @@ async def analyze(request: AnalyzeRequest):
     
     try:
         extrema = analyzer.find_extrema(request.column, request.min_distance)
+        column_data = analyzer.raw_data[:, request.column].tolist()
         return {
             "extrema": [{"value": e.value, "index": e.index, "type": e.extremum_type} for e in extrema],
-            "count": len(extrema)
+            "count": len(extrema),
+            "column_data": column_data
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

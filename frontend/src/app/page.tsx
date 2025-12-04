@@ -12,7 +12,6 @@ import {
   loadDefaultData,
   uploadFile,
   analyzeData,
-  getColumnData,
   getPatternEvents,
   addExtremum,
   removeExtremum,
@@ -54,12 +53,9 @@ export default function Home() {
         const defaultFrequency = 250;
         setCurrentColumn(defaultColumn);
         
-        const [analysisResult, columnData] = await Promise.all([
-          analyzeData(result.session_id, defaultColumn, defaultMinDistance, defaultFrequency),
-          getColumnData(result.session_id, defaultColumn),
-        ]);
+        const analysisResult = await analyzeData(result.session_id, defaultColumn, defaultMinDistance, defaultFrequency);
         setExtrema(analysisResult.extrema);
-        setData(columnData.data);
+        setData(analysisResult.column_data);
         
         // Auto-detect patterns with default pattern (Low → High → Low)
         const defaultPattern = [0, 1, 0];
@@ -100,12 +96,9 @@ export default function Home() {
       setError(null);
       setCurrentColumn(column);
       try {
-        const [analysisResult, columnData] = await Promise.all([
-          analyzeData(sessionId, column, minDistance, frequency),
-          getColumnData(sessionId, column),
-        ]);
+        const analysisResult = await analyzeData(sessionId, column, minDistance, frequency);
         setExtrema(analysisResult.extrema);
-        setData(columnData.data);
+        setData(analysisResult.column_data);
         
         // Auto-detect patterns with default pattern (Low → High → Low)
         const defaultPattern = [0, 1, 0];
