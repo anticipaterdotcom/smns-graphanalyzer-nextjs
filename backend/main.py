@@ -10,7 +10,10 @@ import numpy as np
 import pandas as pd
 import io
 
-from analyzer import GraphAnalyzer, Extremum
+try:
+    from backend.analyzer import GraphAnalyzer, Extremum
+except ImportError:
+    from analyzer import GraphAnalyzer, Extremum
 
 DEFAULT_CSV_PATH = Path(__file__).parent / "test_data.csv"
 
