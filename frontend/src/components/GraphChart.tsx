@@ -44,11 +44,11 @@ export default function GraphChart({
   const handleClick = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (e: any) => {
-      if (!onChartClick) return;
+      if (!onChartClick || !e) return;
       
-      const index = e?.activeLabel ?? e?.activePayload?.[0]?.payload?.index;
-      if (index !== undefined) {
-        onChartClick(index);
+      const index = e.activePayload?.[0]?.payload?.index ?? e.activeLabel;
+      if (index !== undefined && index !== null) {
+        onChartClick(Number(index));
       }
     },
     [onChartClick]
