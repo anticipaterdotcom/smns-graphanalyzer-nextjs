@@ -358,7 +358,14 @@ async def get_stick_figure_data(request: StickFigureRequest):
         if request.column < 0 or request.column >= num_cols:
             raise HTTPException(status_code=400, detail=f"Column {request.column} out of range")
         
-        col_data = data[:, request.column]
+        # Skip padding (100 at start, 100 at end)
+        padding_start = 100
+        padding_end = 100
+        actual_start = padding_start
+        actual_end = num_frames - padding_end
+        
+        col_data = data[actual_start:actual_end, request.column]
+        num_frames = len(col_data)
         y_min, y_max = float(np.min(col_data)), float(np.max(col_data))
         
         # Create frames with trailing points (show history)
