@@ -1,4 +1,4 @@
-.PHONY: dev test backend frontend install
+.PHONY: dev test backend frontend install build
 
 VENV := backend/venv/bin
 
@@ -16,3 +16,6 @@ test:
 install:
 	cd backend && $(CURDIR)/$(VENV)/pip install -r requirements.txt
 	cd frontend && npm install
+
+build:
+	cd frontend && npm run build
