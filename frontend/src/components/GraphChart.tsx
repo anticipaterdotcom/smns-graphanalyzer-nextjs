@@ -146,9 +146,9 @@ export default function GraphChart({
               dot={false}
               isAnimationActive={false}
             />
-            {maxima.map((ext) => (
+            {maxima.map((ext, i) => (
               <ReferenceDot
-                key={`max-${ext.index}`}
+                key={`max-${ext.index}-${i}`}
                 x={ext.index}
                 y={ext.value}
                 r={6}
@@ -157,9 +157,9 @@ export default function GraphChart({
                 strokeWidth={2}
               />
             ))}
-            {minima.map((ext) => (
+            {minima.map((ext, i) => (
               <ReferenceDot
-                key={`min-${ext.index}`}
+                key={`min-${ext.index}-${i}`}
                 x={ext.index}
                 y={ext.value}
                 r={6}

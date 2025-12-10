@@ -146,9 +146,9 @@ export default function ExtremaEditor({
               Maxima ({maxima.length})
             </div>
             <div className="max-h-32 overflow-y-auto space-y-1">
-              {maxima.map((ext) => (
+              {maxima.map((ext, i) => (
                 <div
-                  key={`max-${ext.index}`}
+                  key={`max-${ext.index}-${i}`}
                   className="flex items-center justify-between px-2 py-1 bg-primary-500/10 hover:bg-primary-500/30 rounded-lg text-xs cursor-pointer transition-colors"
                   onMouseEnter={() => onExtremumHover?.(ext.index)}
                   onMouseLeave={() => onExtremumHover?.(null)}
@@ -174,9 +174,9 @@ export default function ExtremaEditor({
               Minima ({minima.length})
             </div>
             <div className="max-h-32 overflow-y-auto space-y-1">
-              {minima.map((ext) => (
+              {minima.map((ext, i) => (
                 <div
-                  key={`min-${ext.index}`}
+                  key={`min-${ext.index}-${i}`}
                   className="flex items-center justify-between px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/30 rounded-lg text-xs cursor-pointer transition-colors"
                   onMouseEnter={() => onExtremumHover?.(ext.index)}
                   onMouseLeave={() => onExtremumHover?.(null)}

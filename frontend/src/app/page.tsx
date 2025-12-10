@@ -9,6 +9,8 @@ import PatternSelector from '@/components/PatternSelector';
 import MeanTrendChart from '@/components/MeanTrendChart';
 import ExtremaEditor from '@/components/ExtremaEditor';
 import StickFigurePlayer from '@/components/StickFigurePlayer';
+import SaveManager from '@/components/SaveManager';
+import { SaveState, createSaveState, addToVersionHistory } from '@/lib/saveManager';
 import {
   loadDefaultData,
   uploadFile,
@@ -47,6 +49,21 @@ export default function Home() {
   const [meanTrendTargetLength, setMeanTrendTargetLength] = useState<number | 'auto'>('auto');
   const stickFigureRef = useRef<HTMLDivElement>(null);
   const meanTrendRef = useRef<HTMLDivElement>(null);
+
+  const autoSave = useCallback((action: string) => {
+    if (data.length === 0) return;
+    const state = createSaveState(
+      sessionId,
+      currentColumn,
+      selectedPattern,
+      extrema,
+      events,
+      data,
+      columns,
+      `Auto: ${action}`
+    );
+    addToVersionHistory(state);
+  }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns]);
 
   useEffect(() => {
     const loadDefaultAndAnalyze = async () => {
@@ -125,13 +142,14 @@ export default function Home() {
         } else {
           setMeanTrendData(null);
         }
+        autoSave(`Analysis col ${column}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Analysis failed');
       } finally {
         setIsLoading(false);
       }
     },
-    [sessionId]
+    [sessionId, autoSave]
   );
 
   const handlePatternSelect = useCallback(
@@ -152,13 +170,14 @@ export default function Home() {
         } else {
           setMeanTrendData(null);
         }
+        autoSave(`Pattern ${pattern.join('-')}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Pattern detection failed');
       } finally {
         setIsLoading(false);
       }
     },
-    [sessionId, currentColumn, meanTrendTargetLength]
+    [sessionId, currentColumn, meanTrendTargetLength, autoSave]
   );
 
   const handleAddExtremum = useCallback(
@@ -173,11 +192,12 @@ export default function Home() {
           const patternResult = await getPatternEvents(sessionId, selectedPattern);
           setEvents(patternResult.events);
         }
+        autoSave(`Add ${type}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add extremum');
       }
     },
-    [sessionId, selectedPattern]
+    [sessionId, selectedPattern, autoSave]
   );
 
   const handleRemoveExtremum = useCallback(
@@ -193,12 +213,13 @@ export default function Home() {
             const patternResult = await getPatternEvents(sessionId, selectedPattern);
             setEvents(patternResult.events);
           }
+          autoSave('Remove extremum');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to remove extremum');
       }
     },
-    [sessionId, selectedPattern]
+    [sessionId, selectedPattern, autoSave]
   );
 
   const handleChartClick = useCallback(
@@ -265,6 +286,20 @@ export default function Home() {
     }
   }, [sessionId, currentColumn]);
 
+  const handleLoadState = useCallback((state: SaveState) => {
+    setSessionId(state.sessionId);
+    setCurrentColumn(state.currentColumn);
+    setSelectedPattern(state.selectedPattern);
+    setExtrema(state.extrema);
+    setEvents(state.events);
+    setData(state.data);
+    setColumns(state.columns);
+    setShowUploadForm(false);
+    setMeanTrendData(null);
+    setShowMeanTrend(false);
+    setShowStickFigure(false);
+  }, []);
+
   const patternRanges = events.map((e) => ({ start: e.start_index, end: e.end_index }));
 
   return (
@@ -300,36 +335,50 @@ export default function Home() {
               <p className="text-xs text-neutral-400">Graph Analyzer</p>
             </div>
           </div>
-          {sessionId && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  setShowMeanTrend(true);
-                  setTimeout(() => meanTrendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-                }}
-                disabled={isLoading || events.length < 2}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-xl hover:from-purple-500 hover:to-pink-500 transition-all disabled:opacity-50"
-              >
-                <TrendingUp className="w-4 h-4" />
-                Mean Trend
-              </button>
-              <button
-                onClick={handleOpenStickFigure}
-                disabled={isLoading || columns < 2}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-medium rounded-xl hover:from-blue-500 hover:to-emerald-500 transition-all disabled:opacity-50"
-              >
-                <Film className="w-4 h-4" />
-                Stick Figure
-              </button>
-              <button
-                onClick={handleReset}
-                className="flex items-center gap-2 px-4 py-2.5 bg-neutral-700 border border-neutral-600 text-white font-medium rounded-xl hover:bg-neutral-600 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                New Report
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            <SaveManager
+              sessionId={sessionId}
+              currentColumn={currentColumn}
+              selectedPattern={selectedPattern}
+              extrema={extrema}
+              events={events}
+              data={data}
+              columns={columns}
+              onLoadState={handleLoadState}
+              disabled={isLoading}
+            />
+            {sessionId && (
+              <>
+                <div className="w-px h-6 bg-white/10" />
+                <button
+                  onClick={() => {
+                    setShowMeanTrend(true);
+                    setTimeout(() => meanTrendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                  }}
+                  disabled={isLoading || events.length < 2}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-500 hover:to-pink-500 transition-all disabled:opacity-50"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  Trend
+                </button>
+                <button
+                  onClick={handleOpenStickFigure}
+                  disabled={isLoading || columns < 2}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-blue-500 hover:to-emerald-500 transition-all disabled:opacity-50"
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  Stick
+                </button>
+                <button
+                  onClick={handleReset}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-700 border border-neutral-600 text-white text-sm font-medium rounded-lg hover:bg-neutral-600 transition-colors"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  New
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
