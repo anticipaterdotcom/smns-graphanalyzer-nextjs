@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { RefreshCw, Film, Upload } from 'lucide-react';
+import { RefreshCw, Film, Upload, TrendingUp } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import AnalysisControls from '@/components/AnalysisControls';
 import GraphChart from '@/components/GraphChart';
@@ -38,6 +38,7 @@ export default function Home() {
   const [currentColumn, setCurrentColumn] = useState(0);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
   const [showStickFigure, setShowStickFigure] = useState(false);
+  const [showMeanTrend, setShowMeanTrend] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [highlightedEvent, setHighlightedEvent] = useState<PatternEvent | null>(null);
   const [highlightedExtremumIndex, setHighlightedExtremumIndex] = useState<number | null>(null);
@@ -45,6 +46,7 @@ export default function Home() {
   const [meanTrendLoading, setMeanTrendLoading] = useState(false);
   const [meanTrendTargetLength, setMeanTrendTargetLength] = useState<number | 'auto'>('auto');
   const stickFigureRef = useRef<HTMLDivElement>(null);
+  const meanTrendRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadDefaultAndAnalyze = async () => {
@@ -301,6 +303,17 @@ export default function Home() {
           {sessionId && (
             <div className="flex items-center gap-3">
               <button
+                onClick={() => {
+                  setShowMeanTrend(true);
+                  setTimeout(() => meanTrendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                }}
+                disabled={isLoading || events.length < 2}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-xl hover:from-purple-500 hover:to-pink-500 transition-all disabled:opacity-50"
+              >
+                <TrendingUp className="w-4 h-4" />
+                Mean Trend
+              </button>
+              <button
                 onClick={handleOpenStickFigure}
                 disabled={isLoading || columns < 2}
                 className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-medium rounded-xl hover:from-blue-500 hover:to-emerald-500 transition-all disabled:opacity-50"
@@ -369,13 +382,16 @@ export default function Home() {
               </div>
             )}
 
-            {events.length >= 2 && (
-              <MeanTrendChart
-                data={meanTrendData}
-                isLoading={meanTrendLoading}
-                targetLength={meanTrendTargetLength}
-                onTargetLengthChange={handleMeanTrendTargetLengthChange}
-              />
+            {showMeanTrend && events.length >= 2 && (
+              <div ref={meanTrendRef}>
+                <MeanTrendChart
+                  data={meanTrendData}
+                  isLoading={meanTrendLoading}
+                  targetLength={meanTrendTargetLength}
+                  onTargetLengthChange={handleMeanTrendTargetLengthChange}
+                  onClose={() => setShowMeanTrend(false)}
+                />
+              </div>
             )}
 
             {showStickFigure && (

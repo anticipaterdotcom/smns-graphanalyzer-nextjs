@@ -11,7 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, Download } from 'lucide-react';
+import { TrendingUp, Download, X } from 'lucide-react';
 import { MeanTrendResponse } from '@/lib/api';
 
 interface MeanTrendChartProps {
@@ -19,6 +19,7 @@ interface MeanTrendChartProps {
   isLoading?: boolean;
   targetLength: number | 'auto';
   onTargetLengthChange: (value: number | 'auto') => void;
+  onClose?: () => void;
 }
 
 export default function MeanTrendChart({
@@ -26,6 +27,7 @@ export default function MeanTrendChart({
   isLoading,
   targetLength,
   onTargetLengthChange,
+  onClose,
 }: MeanTrendChartProps) {
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -103,6 +105,15 @@ export default function MeanTrendChart({
             >
               <Download className="w-4 h-4" />
               CSV
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
             </button>
           )}
         </div>
