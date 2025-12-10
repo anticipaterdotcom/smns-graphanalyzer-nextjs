@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:8000');
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -172,6 +172,28 @@ export async function getStickFigureData(
     point_labels: pointLabels,
     frame_rate: frameRate,
     column,
+  });
+  return response.data;
+}
+
+export interface MeanTrendResponse {
+  mean: number[];
+  std: number[];
+  length: number;
+  event_count: number;
+}
+
+export async function getMeanTrend(
+  sessionId: string,
+  pattern: number[],
+  column: number,
+  targetLength?: number
+): Promise<MeanTrendResponse> {
+  const response = await api.post('/api/mean-trend', {
+    session_id: sessionId,
+    pattern,
+    column,
+    target_length: targetLength,
   });
   return response.data;
 }

@@ -6,6 +6,7 @@ import FileUpload from '@/components/FileUpload';
 import AnalysisControls from '@/components/AnalysisControls';
 import GraphChart from '@/components/GraphChart';
 import PatternSelector from '@/components/PatternSelector';
+import MeanTrendChart from '@/components/MeanTrendChart';
 import ExtremaEditor from '@/components/ExtremaEditor';
 import StickFigurePlayer from '@/components/StickFigurePlayer';
 import {
@@ -16,9 +17,11 @@ import {
   addExtremum,
   removeExtremum,
   getStickFigureData,
+  getMeanTrend,
   Extremum,
   PatternEvent,
   StickFigureData,
+  MeanTrendResponse,
 } from '@/lib/api';
 
 export default function Home() {
@@ -38,6 +41,9 @@ export default function Home() {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [highlightedEvent, setHighlightedEvent] = useState<PatternEvent | null>(null);
   const [highlightedExtremumIndex, setHighlightedExtremumIndex] = useState<number | null>(null);
+  const [meanTrendData, setMeanTrendData] = useState<MeanTrendResponse | null>(null);
+  const [meanTrendLoading, setMeanTrendLoading] = useState(false);
+  const [meanTrendTargetLength, setMeanTrendTargetLength] = useState<number | 'auto'>('auto');
   const stickFigureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,6 +68,11 @@ export default function Home() {
         setSelectedPattern(defaultPattern);
         const patternResult = await getPatternEvents(result.session_id, defaultPattern);
         setEvents(patternResult.events);
+        
+        if (patternResult.events.length >= 2) {
+          const meanResult = await getMeanTrend(result.session_id, defaultPattern, defaultColumn);
+          setMeanTrendData(meanResult);
+        }
       } catch (err) {
         setShowUploadForm(true);
       } finally {
@@ -105,6 +116,13 @@ export default function Home() {
         setSelectedPattern(defaultPattern);
         const patternResult = await getPatternEvents(sessionId, defaultPattern);
         setEvents(patternResult.events);
+        
+        if (patternResult.events.length >= 2) {
+          const meanResult = await getMeanTrend(sessionId, defaultPattern, column);
+          setMeanTrendData(meanResult);
+        } else {
+          setMeanTrendData(null);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Analysis failed');
       } finally {
@@ -122,13 +140,23 @@ export default function Home() {
       try {
         const result = await getPatternEvents(sessionId, pattern);
         setEvents(result.events);
+        
+        if (result.events.length >= 2) {
+          setMeanTrendLoading(true);
+          const targetLen = meanTrendTargetLength === 'auto' ? undefined : meanTrendTargetLength;
+          const meanResult = await getMeanTrend(sessionId, pattern, currentColumn, targetLen);
+          setMeanTrendData(meanResult);
+          setMeanTrendLoading(false);
+        } else {
+          setMeanTrendData(null);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Pattern detection failed');
       } finally {
         setIsLoading(false);
       }
     },
-    [sessionId]
+    [sessionId, currentColumn, meanTrendTargetLength]
   );
 
   const handleAddExtremum = useCallback(
@@ -193,7 +221,27 @@ export default function Home() {
     setStickFigureData(null);
     setShowStickFigure(false);
     setShowUploadForm(true);
+    setMeanTrendData(null);
   }, []);
+
+  const handleMeanTrendTargetLengthChange = useCallback(
+    async (value: number | 'auto') => {
+      setMeanTrendTargetLength(value);
+      if (!sessionId || events.length < 2) return;
+      
+      setMeanTrendLoading(true);
+      try {
+        const targetLen = value === 'auto' ? undefined : value;
+        const meanResult = await getMeanTrend(sessionId, selectedPattern, currentColumn, targetLen);
+        setMeanTrendData(meanResult);
+      } catch (err) {
+        console.error('Failed to update mean trend:', err);
+      } finally {
+        setMeanTrendLoading(false);
+      }
+    },
+    [sessionId, selectedPattern, currentColumn, events.length]
+  );
 
   const handleOpenStickFigure = useCallback(async () => {
     if (!sessionId) return;
@@ -319,6 +367,15 @@ export default function Home() {
                   onEventHover={setHighlightedEvent}
                 />
               </div>
+            )}
+
+            {events.length >= 2 && (
+              <MeanTrendChart
+                data={meanTrendData}
+                isLoading={meanTrendLoading}
+                targetLength={meanTrendTargetLength}
+                onTargetLengthChange={handleMeanTrendTargetLengthChange}
+              />
             )}
 
             {showStickFigure && (
