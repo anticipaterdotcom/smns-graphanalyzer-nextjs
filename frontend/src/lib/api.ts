@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || (isProduction ? '' : 'http://localhost:8000');
 
 const api = axios.create({
   baseURL: API_BASE,
