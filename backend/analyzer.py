@@ -33,7 +33,7 @@ class GraphAnalyzer:
         self.extrema: List[Extremum] = []
         self.current_column: int = 0
     
-    def load_csv(self, data: np.ndarray, add_padding: bool = True) -> None:
+    def load_csv(self, data: np.ndarray, add_padding: bool = False) -> None:
         if add_padding:
             rows, cols = data.shape
             padded = np.zeros((rows + 200, cols))
