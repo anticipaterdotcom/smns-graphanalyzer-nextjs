@@ -198,3 +198,18 @@ export async function getMeanTrend(
   });
   return response.data;
 }
+
+export async function restoreState(
+  sessionId: string,
+  extrema: Extremum[]
+): Promise<{ success: boolean; count: number }> {
+  const response = await api.post('/api/state/restore', {
+    session_id: sessionId,
+    extrema: extrema.map(e => ({
+      value: e.value,
+      index: e.index,
+      extremum_type: e.type,
+    })),
+  });
+  return response.data;
+}

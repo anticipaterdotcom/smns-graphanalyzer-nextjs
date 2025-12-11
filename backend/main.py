@@ -60,6 +60,11 @@ class ColumnDataRequest(BaseModel):
     column: int
 
 
+class RestoreStateRequest(BaseModel):
+    session_id: str
+    extrema: List[dict]
+
+
 @app.get("/api/load-default")
 async def load_default_data(delimiter: str = ";"):
     if not DEFAULT_CSV_PATH.exists():
@@ -196,6 +201,23 @@ async def get_extrema(session_id: str):
     return {
         "extrema": [{"value": e.value, "index": e.index, "type": e.extremum_type} for e in analyzer.extrema]
     }
+
+
+@app.post("/api/state/restore")
+async def restore_state(request: RestoreStateRequest):
+    if request.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    analyzer = sessions[request.session_id]
+    analyzer.extrema = [
+        Extremum(
+            value=e["value"],
+            index=e["index"],
+            extremum_type=e["extremum_type"]
+        )
+        for e in request.extrema
+    ]
+    return {"success": True, "count": len(analyzer.extrema)}
 
 
 @app.post("/api/export/events")

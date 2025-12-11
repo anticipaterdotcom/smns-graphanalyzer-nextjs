@@ -20,6 +20,7 @@ import {
   removeExtremum,
   getStickFigureData,
   getMeanTrend,
+  restoreState,
   Extremum,
   PatternEvent,
   StickFigureData,
@@ -286,19 +287,36 @@ export default function Home() {
     }
   }, [sessionId, currentColumn]);
 
-  const handleLoadState = useCallback((state: SaveState) => {
-    setSessionId(state.sessionId);
-    setCurrentColumn(state.currentColumn);
-    setSelectedPattern(state.selectedPattern);
-    setExtrema(state.extrema);
-    setEvents(state.events);
-    setData(state.data);
-    setColumns(state.columns);
-    setShowUploadForm(false);
-    setMeanTrendData(null);
-    setShowMeanTrend(false);
-    setShowStickFigure(false);
-  }, []);
+  const handleLoadState = useCallback(async (state: SaveState) => {
+    if (!sessionId) return;
+    
+    setIsLoading(true);
+    try {
+      setCurrentColumn(state.currentColumn);
+      setSelectedPattern(state.selectedPattern);
+      setExtrema(state.extrema);
+      setData(state.data);
+      setColumns(state.columns);
+      setShowUploadForm(false);
+      setMeanTrendData(null);
+      setShowMeanTrend(false);
+      setShowStickFigure(false);
+      
+      await restoreState(sessionId, state.extrema);
+      
+      const patternResult = await getPatternEvents(sessionId, state.selectedPattern);
+      setEvents(patternResult.events);
+      
+      if (patternResult.events.length >= 2) {
+        const meanResult = await getMeanTrend(sessionId, state.selectedPattern, state.currentColumn);
+        setMeanTrendData(meanResult);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restore state');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionId]);
 
   const patternRanges = events.map((e) => ({ start: e.start_index, end: e.end_index }));
 
