@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Save, Upload, History, Download, Trash2, X, Clock } from 'lucide-react';
+import { Save, Upload, History, Download, Trash2, X, Clock, Check } from 'lucide-react';
 import {
   SaveState,
   VersionHistoryEntry,
@@ -43,11 +43,32 @@ export default function SaveManager({
   const [history, setHistory] = useState<VersionHistoryEntry[]>([]);
   const [saveName, setSaveName] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  useEffect(() => {
     setHistory(getVersionHistory());
+  }, []);
+
+  useEffect(() => {
+    if (showHistory) {
+      setHistory(getVersionHistory());
+    }
   }, [showHistory]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHistory(getVersionHistory());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSave = (download: boolean = false) => {
     const state = createSaveState(
@@ -69,6 +90,7 @@ export default function SaveManager({
     setHistory(getVersionHistory());
     setShowSaveDialog(false);
     setSaveName('');
+    setToast(download ? 'Saved & Downloaded' : 'Saved to history');
   };
 
   const handleQuickSave = () => {
@@ -84,6 +106,7 @@ export default function SaveManager({
     );
     addToVersionHistory(state);
     setHistory(getVersionHistory());
+    setToast('Quick saved');
   };
 
   const handleLoadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -127,6 +150,12 @@ export default function SaveManager({
 
   return (
     <>
+      {toast && (
+        <div className="fixed top-20 right-6 z-[100] flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+          <Check className="w-4 h-4" />
+          {toast}
+        </div>
+      )}
       <div className="flex items-center gap-1">
         <button
           onClick={handleQuickSave}
