@@ -37,7 +37,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editAction, setEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
-  const [snapToPeak, setSnapToPeak] = useState(true);
+  const [epsilon, setEpsilon] = useState(20);
   const [currentColumn, setCurrentColumn] = useState(0);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
   const [showStickFigure, setShowStickFigure] = useState(false);
@@ -208,10 +208,10 @@ export default function Home() {
       if (editAction === 'remove') {
         handleRemoveExtremum(index);
       } else {
-        handleAddExtremum(index, editAction === 'add-max' ? 'max' : 'min', 0);
+        handleAddExtremum(index, editAction === 'add-max' ? 'max' : 'min', epsilon);
       }
     },
-    [editMode, editAction, handleAddExtremum, handleRemoveExtremum]
+    [editMode, editAction, handleAddExtremum, handleRemoveExtremum, epsilon]
   );
 
   const handleReset = useCallback(() => {
@@ -404,8 +404,8 @@ export default function Home() {
                   onEditActionChange={setEditAction}
                   extrema={extrema}
                   onExtremumHover={setHighlightedExtremumIndex}
-                  snapToPeak={snapToPeak}
-                  onSnapToPeakChange={setSnapToPeak}
+                  epsilon={epsilon}
+                  onEpsilonChange={setEpsilon}
                 />
                 <PatternSelector
                   onPatternSelect={handlePatternSelect}

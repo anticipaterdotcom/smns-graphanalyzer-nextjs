@@ -18,8 +18,8 @@ interface ExtremaEditorProps {
   onEditActionChange: (action: 'add-max' | 'add-min' | 'remove') => void;
   extrema: Extremum[];
   onExtremumHover?: (index: number | null) => void;
-  snapToPeak: boolean;
-  onSnapToPeakChange: (snap: boolean) => void;
+  epsilon: number;
+  onEpsilonChange: (epsilon: number) => void;
 }
 
 export default function ExtremaEditor({
@@ -31,8 +31,8 @@ export default function ExtremaEditor({
   onEditActionChange,
   extrema,
   onExtremumHover,
-  snapToPeak,
-  onSnapToPeakChange,
+  epsilon,
+  onEpsilonChange,
 }: ExtremaEditorProps) {
   const [inputIndex, setInputIndex] = useState('');
   
@@ -46,7 +46,6 @@ export default function ExtremaEditor({
     if (editAction === 'remove') {
       onRemoveExtremum(index);
     } else {
-      const epsilon = snapToPeak ? 20 : 0;
       onAddExtremum(index, editAction === 'add-max' ? 'max' : 'min', epsilon);
     }
     setInputIndex('');
@@ -142,15 +141,19 @@ export default function ExtremaEditor({
               ? 'Click on the chart to add/remove extrema at that position.'
               : 'Enable click mode or enter an index manually to edit extrema.'}
           </p>
-          <label className="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={snapToPeak}
-              onChange={(e) => onSnapToPeakChange(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-neutral-600 bg-neutral-800 text-primary-500 focus:ring-primary-500/20"
-            />
-            Snap to peak
-          </label>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+              <span>Snap ±</span>
+              <input
+                type="number"
+                value={epsilon}
+                onChange={(e) => onEpsilonChange(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-12 px-1.5 py-0.5 bg-neutral-800 border border-neutral-600 rounded text-white text-xs text-center"
+                min={0}
+                max={100}
+              />
+            </label>
+          </div>
         </div>
 
         {/* Extrema Lists */}
