@@ -277,26 +277,26 @@ export default function GraphChart({
         <p className="text-xs text-neutral-500">
           Click on the chart to add/remove extrema. Total points: {data.length}
         </p>
-        <div className="flex items-center gap-1">
+        <div className="flex gap-2">
           <button
             onClick={exportCSV}
-            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
-            <Download className="w-3 h-3" />
+            <Download className="w-4 h-4" />
             CSV
           </button>
           <button
             onClick={() => exportImage('png')}
-            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
-            <Image className="w-3 h-3" />
+            <Image className="w-4 h-4" />
             JPG
           </button>
           <button
             onClick={() => exportImage('svg')}
-            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
-            <Image className="w-3 h-3" />
+            <Image className="w-4 h-4" />
             SVG
           </button>
         </div>

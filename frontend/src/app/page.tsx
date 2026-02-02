@@ -435,7 +435,7 @@ export default function Home() {
               </div>
             )}
 
-            {sessionId && data.length > 0 && (
+            {showReferenceAnalysis && sessionId && data.length > 0 && (
               <div ref={referenceAnalysisRef}>
                 <ReferenceAnalysis
                   sessionId={sessionId}
@@ -443,6 +443,7 @@ export default function Home() {
                   analyzedData={data}
                   events={events}
                   totalColumns={columns}
+                  onClose={() => setShowReferenceAnalysis(false)}
                 />
               </div>
             )}

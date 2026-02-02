@@ -31,46 +31,62 @@ export default function ReferenceAnalysis({
   totalColumns,
   onClose,
 }: ReferenceAnalysisProps) {
-  const [referenceColumn, setReferenceColumn] = useState(0);
-  const [referenceData, setReferenceData] = useState<number[]>([]);
+  const [topColumn, setTopColumn] = useState(analyzedColumn);
+  const [bottomColumn, setBottomColumn] = useState(0);
+  const [topData, setTopData] = useState<number[]>(analyzedData);
+  const [bottomData, setBottomData] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadReferenceData = async () => {
-      if (referenceColumn === analyzedColumn) {
-        setReferenceData(analyzedData);
+    const loadTopData = async () => {
+      if (topColumn === analyzedColumn) {
+        setTopData(analyzedData);
         return;
       }
-      
+      try {
+        const result = await getColumnData(sessionId, topColumn);
+        setTopData(result.data);
+      } catch (err) {
+        console.error('Failed to load top chart data:', err);
+      }
+    };
+    loadTopData();
+  }, [sessionId, topColumn, analyzedColumn, analyzedData]);
+
+  useEffect(() => {
+    const loadBottomData = async () => {
+      if (bottomColumn === analyzedColumn) {
+        setBottomData(analyzedData);
+        return;
+      }
       setIsLoading(true);
       try {
-        const result = await getColumnData(sessionId, referenceColumn);
-        setReferenceData(result.data);
+        const result = await getColumnData(sessionId, bottomColumn);
+        setBottomData(result.data);
       } catch (err) {
-        console.error('Failed to load reference data:', err);
+        console.error('Failed to load bottom chart data:', err);
       } finally {
         setIsLoading(false);
       }
     };
-
-    loadReferenceData();
-  }, [sessionId, referenceColumn, analyzedColumn, analyzedData]);
+    loadBottomData();
+  }, [sessionId, bottomColumn, analyzedColumn, analyzedData]);
 
   const patternRanges = useMemo(() => {
     return events.map((e) => ({ start: e.start_index, end: e.end_index }));
   }, [events]);
 
-  const analyzedChartData = useMemo(() => {
-    return analyzedData.map((value, index) => ({ index, value }));
-  }, [analyzedData]);
+  const topChartData = useMemo(() => {
+    return topData.map((value, index) => ({ index, value }));
+  }, [topData]);
 
-  const referenceChartData = useMemo(() => {
-    return referenceData.map((value, index) => ({ index, value }));
-  }, [referenceData]);
+  const bottomChartData = useMemo(() => {
+    return bottomData.map((value, index) => ({ index, value }));
+  }, [bottomData]);
 
   const getXAxisConfig = useMemo(() => {
-    const len = Math.max(analyzedData.length, referenceData.length);
+    const len = Math.max(topData.length, bottomData.length);
     if (len === 0) return { ticks: [1], max: 100 };
     let step: number;
     if (len <= 50) step = 5;
@@ -87,10 +103,10 @@ export default function ReferenceAnalysis({
       ticks.push(i);
     }
     return { ticks, max };
-  }, [analyzedData.length, referenceData.length]);
+  }, [topData.length, bottomData.length]);
 
   const sharedYDomain = useMemo((): [number, number] => {
-    const allValues = [...analyzedData, ...referenceData].filter(v => v !== 0);
+    const allValues = [...topData, ...bottomData].filter(v => v !== 0);
     if (allValues.length === 0) return [0, 10];
     const maxVal = Math.max(...allValues);
     const minVal = Math.min(...allValues);
@@ -99,17 +115,47 @@ export default function ReferenceAnalysis({
     else yMax = Math.ceil(maxVal / 10) * 10;
     const yMin = Math.floor(minVal / 10) * 10;
     return [yMin, yMax];
-  }, [analyzedData, referenceData]);
+  }, [topData, bottomData]);
 
   const columnOptions = Array.from({ length: totalColumns }, (_, i) => i);
 
   const exportImage = useCallback(async (format: 'png' | 'svg') => {
     if (!chartRef.current) return;
-    const svgElement = chartRef.current.querySelector('svg');
-    if (!svgElement) return;
+    const svgElements = chartRef.current.querySelectorAll('svg');
+    if (svgElements.length === 0) return;
+
+    const titles = [`Column ${topColumn + 1}`, `Column ${bottomColumn + 1}`];
+    const titleHeight = 30;
 
     if (format === 'svg') {
-      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const combinedSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      let totalHeight = 0;
+      const width = svgElements[0]?.clientWidth || 800;
+      
+      svgElements.forEach((svg, index) => {
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        title.setAttribute('x', '10');
+        title.setAttribute('y', String(totalHeight + 20));
+        title.setAttribute('fill', '#e5e5e5');
+        title.setAttribute('font-size', '14');
+        title.setAttribute('font-family', 'sans-serif');
+        title.textContent = titles[index] || `Chart ${index + 1}`;
+        combinedSvg.appendChild(title);
+        totalHeight += titleHeight;
+
+        const clone = svg.cloneNode(true) as SVGElement;
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('transform', `translate(0, ${totalHeight})`);
+        g.appendChild(clone);
+        combinedSvg.appendChild(g);
+        totalHeight += svg.clientHeight + 20;
+      });
+      
+      combinedSvg.setAttribute('width', String(width));
+      combinedSvg.setAttribute('height', String(totalHeight));
+      combinedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      
+      const svgData = new XMLSerializer().serializeToString(combinedSvg);
       const blob = new Blob([svgData], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -120,34 +166,57 @@ export default function ReferenceAnalysis({
     } else {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      const svgData = new XMLSerializer().serializeToString(svgElement);
-      const img = new window.Image();
-      canvas.width = svgElement.clientWidth * 2;
-      canvas.height = svgElement.clientHeight * 2;
-      img.onload = () => {
-        if (ctx) {
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `reference_analysis.jpg`;
-              a.click();
-              URL.revokeObjectURL(url);
+      const width = (svgElements[0]?.clientWidth || 800) * 2;
+      let totalHeight = 0;
+      svgElements.forEach((svg) => { totalHeight += svg.clientHeight + titleHeight; });
+      totalHeight = totalHeight * 2 + 40;
+      
+      canvas.width = width;
+      canvas.height = totalHeight;
+      
+      if (ctx) {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        let yOffset = 0;
+        let loaded = 0;
+        
+        svgElements.forEach((svg, index) => {
+          ctx.fillStyle = '#e5e5e5';
+          ctx.font = '28px sans-serif';
+          ctx.fillText(titles[index] || `Chart ${index + 1}`, 20, yOffset + 40);
+          yOffset += titleHeight * 2;
+
+          const svgData = new XMLSerializer().serializeToString(svg);
+          const img = new window.Image();
+          const currentY = yOffset;
+          
+          img.onload = () => {
+            ctx.drawImage(img, 0, currentY, width, svg.clientHeight * 2);
+            loaded++;
+            if (loaded === svgElements.length) {
+              canvas.toBlob((blob) => {
+                if (blob) {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `reference_analysis.jpg`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }
+              }, 'image/jpeg', 0.95);
             }
-          }, 'image/jpeg', 0.95);
-        }
-      };
-      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+          };
+          img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+          yOffset += svg.clientHeight * 2 + 20;
+        });
+      }
     }
-  }, []);
+  }, [topColumn, bottomColumn]);
 
   const exportCSV = useCallback(() => {
-    const headers = ['index', `col${analyzedColumn + 1}`, `col${referenceColumn + 1}`];
-    const rows = analyzedData.map((val, i) => [i, val, referenceData[i] ?? '']);
+    const headers = ['index', `col${topColumn + 1}`, `col${bottomColumn + 1}`];
+    const rows = topData.map((val, i) => [i, val, bottomData[i] ?? '']);
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -156,7 +225,7 @@ export default function ReferenceAnalysis({
     a.download = `reference_analysis.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [analyzedColumn, referenceColumn, analyzedData, referenceData]);
+  }, [topColumn, bottomColumn, topData, bottomData]);
 
   return (
     <div className="card p-6">
@@ -170,40 +239,33 @@ export default function ReferenceAnalysis({
             <p className="text-xs text-neutral-500">{events.length} pattern events detected</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-neutral-400">Reference Column:</label>
-            <select
-              value={referenceColumn}
-              onChange={(e) => setReferenceColumn(Number(e.target.value))}
-              className="px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-white text-sm"
-            >
-              {columnOptions.map((col) => (
-                <option key={col} value={col}>
-                  Column {col + 1}
-                </option>
-              ))}
-            </select>
-          </div>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       <div ref={chartRef} className="space-y-4">
         <div>
-          <p className="text-sm font-medium text-neutral-300 mb-2">
-            Analysed Data from Column {analyzedColumn + 1}
-          </p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-sm font-medium text-neutral-300">Top Chart:</p>
+            <select
+              value={topColumn}
+              onChange={(e) => setTopColumn(Number(e.target.value))}
+              className="px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+            >
+              {columnOptions.map((col) => (
+                <option key={col} value={col}>Column {col + 1}</option>
+              ))}
+            </select>
+          </div>
           <div className="h-[200px] rounded-xl bg-neutral-900/50 p-4">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={analyzedChartData}>
+              <LineChart data={topChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis 
                   dataKey="index"
@@ -252,13 +314,22 @@ export default function ReferenceAnalysis({
         </div>
 
         <div>
-          <p className="text-sm font-medium text-neutral-300 mb-2">
-            Reference Data from Column {referenceColumn + 1}
-            {isLoading && <span className="text-neutral-500 ml-2">Loading...</span>}
-          </p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-sm font-medium text-neutral-300">Bottom Chart:</p>
+            <select
+              value={bottomColumn}
+              onChange={(e) => setBottomColumn(Number(e.target.value))}
+              className="px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+            >
+              {columnOptions.map((col) => (
+                <option key={col} value={col}>Column {col + 1}</option>
+              ))}
+            </select>
+            {isLoading && <span className="text-neutral-500 text-xs">Loading...</span>}
+          </div>
           <div className="h-[200px] rounded-xl bg-neutral-900/50 p-4">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={referenceChartData}>
+              <LineChart data={bottomChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis 
                   dataKey="index"
@@ -311,26 +382,26 @@ export default function ReferenceAnalysis({
         <p className="text-xs text-neutral-500">
           Yellow/Blue highlighted areas show detected pattern regions across both columns
         </p>
-        <div className="flex items-center gap-1">
+        <div className="flex gap-2">
           <button
             onClick={exportCSV}
-            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
-            <Download className="w-3 h-3" />
+            <Download className="w-4 h-4" />
             CSV
           </button>
           <button
             onClick={() => exportImage('png')}
-            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
-            <Image className="w-3 h-3" />
+            <Image className="w-4 h-4" />
             JPG
           </button>
           <button
             onClick={() => exportImage('svg')}
-            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
-            <Image className="w-3 h-3" />
+            <Image className="w-4 h-4" />
             SVG
           </button>
         </div>
