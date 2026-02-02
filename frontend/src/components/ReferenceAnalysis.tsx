@@ -674,12 +674,6 @@ export default function ReferenceAnalysis({
                 >
                   <Plus className="w-3 h-3" /> Min
                 </button>
-                <button
-                  onClick={() => onEditActionChange('remove')}
-                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'remove' ? 'bg-red-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-                >
-                  <Minus className="w-3 h-3" /> Remove
-                </button>
               </>
             )}
           </div>

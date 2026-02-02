@@ -421,7 +421,11 @@ export default function Home() {
                   editAction={editAction}
                   onChartClick={handleChartClick}
                   highlightedExtremumIndex={highlightedExtremumIndex}
-                  onToggleEditMode={() => setEditMode(!editMode)}
+                  onToggleEditMode={() => {
+                  const newEditMode = !editMode;
+                  setEditMode(newEditMode);
+                  if (newEditMode) setEditAction('add-max');
+                }}
                   onEditActionChange={setEditAction}
                   onAddExtremum={handleAddExtremum}
                   onRemoveExtremum={handleRemoveExtremum}
