@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { RefreshCw, Film, Upload, TrendingUp, Layers } from 'lucide-react';
+import { RefreshCw, Film, Upload, TrendingUp, Layers, Settings } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import AnalysisControls from '@/components/AnalysisControls';
 import GraphChart from '@/components/GraphChart';
@@ -46,9 +46,11 @@ export default function Home() {
   const [highlightedExtremumIndex, setHighlightedExtremumIndex] = useState<number | null>(null);
     const [showReferenceAnalysis, setShowReferenceAnalysis] = useState(false);
   const [showMeanTrendsAnalyzer, setShowMeanTrendsAnalyzer] = useState(false);
+  const [showAnalysisParams, setShowAnalysisParams] = useState(false);
   const stickFigureRef = useRef<HTMLDivElement>(null);
     const referenceAnalysisRef = useRef<HTMLDivElement>(null);
   const meanTrendsAnalyzerRef = useRef<HTMLDivElement>(null);
+  const analysisControlsRef = useRef<HTMLDivElement>(null);
 
   const autoSave = useCallback((action: string) => {
     if (data.length === 0) return;
@@ -319,6 +321,15 @@ export default function Home() {
               disabled={isLoading}
             />
             {sessionId && (
+              <button
+                onClick={() => setShowAnalysisParams(!showAnalysisParams)}
+                className={`p-2 bg-neutral-800 border border-white/10 rounded-lg hover:bg-neutral-700 transition-colors ${showAnalysisParams ? 'text-primary-400' : 'text-neutral-300'}`}
+                title="Analysis Parameters"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
+            {sessionId && (
               <>
                 <div className="w-px h-6 bg-white/10" />
                 <button
@@ -381,40 +392,48 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-8">
-            <AnalysisControls columns={columns} onAnalyze={handleAnalyze} isLoading={isLoading} hasExtrema={extrema.length > 0} />
+            {showAnalysisParams && (
+              <div ref={analysisControlsRef}>
+                <AnalysisControls columns={columns} onAnalyze={handleAnalyze} isLoading={isLoading} hasExtrema={extrema.length > 0} />
+              </div>
+            )}
 
             <GraphChart
               data={data}
               extrema={extrema}
-              onChartClick={handleChartClick}
               selectedPattern={selectedPattern}
               patternRanges={patternRanges}
               highlightRange={highlightedEvent ? { start: highlightedEvent.start_index, end: highlightedEvent.end_index } : null}
               highlightIndex={highlightedExtremumIndex}
             />
 
-            {data.length > 0 && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <ExtremaEditor
+            {sessionId && data.length > 0 && (
+              <div ref={referenceAnalysisRef}>
+                <ReferenceAnalysis
+                  sessionId={sessionId}
+                  analyzedColumn={currentColumn}
+                  analyzedData={data}
+                  events={events}
+                  totalColumns={columns}
+                  onClose={() => setShowReferenceAnalysis(false)}
+                  mainExtrema={extrema}
+                  editMode={editMode}
+                  editAction={editAction}
+                  onChartClick={handleChartClick}
+                  highlightedExtremumIndex={highlightedExtremumIndex}
+                  onToggleEditMode={() => setEditMode(!editMode)}
+                  onEditActionChange={setEditAction}
                   onAddExtremum={handleAddExtremum}
                   onRemoveExtremum={handleRemoveExtremum}
-                  isActive={editMode}
-                  onToggleActive={() => setEditMode(!editMode)}
-                  editAction={editAction}
-                  onEditActionChange={setEditAction}
-                  extrema={extrema}
-                  onExtremumHover={setHighlightedExtremumIndex}
                   epsilon={epsilon}
                   onEpsilonChange={setEpsilon}
-                />
-                <PatternSelector
-                  onPatternSelect={handlePatternSelect}
-                  events={events}
-                  onEventHover={setHighlightedEvent}
+                  onPatternChange={handlePatternSelect}
+                  currentPattern={selectedPattern}
                 />
               </div>
             )}
 
+            
             {showStickFigure && (
               <div ref={stickFigureRef}>
                 <StickFigurePlayer
@@ -435,19 +454,7 @@ export default function Home() {
               </div>
             )}
 
-            {showReferenceAnalysis && sessionId && data.length > 0 && (
-              <div ref={referenceAnalysisRef}>
-                <ReferenceAnalysis
-                  sessionId={sessionId}
-                  analyzedColumn={currentColumn}
-                  analyzedData={data}
-                  events={events}
-                  totalColumns={columns}
-                  onClose={() => setShowReferenceAnalysis(false)}
-                />
-              </div>
-            )}
-          </div>
+            </div>
         )}
       </main>
 
