@@ -266,6 +266,15 @@ class MeanTrendRequest(BaseModel):
     target_length: Optional[int] = None
 
 
+class MeanTrendExtendedRequest(BaseModel):
+    session_id: str
+    pattern: List[int]
+    column: int
+    target_length: Optional[int] = None
+    length_mode: str = 'average'  # 'average' or 'percentage'
+    interpolation_method: str = 'linear'  # 'linear' or 'spline'
+
+
 class NormalizeRequest(BaseModel):
     session_id: str
     column: int
@@ -296,6 +305,30 @@ async def get_mean_trend(request: MeanTrendRequest):
             "length": len(mean_trend),
             "event_count": len(events)
         }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/mean-trend-extended")
+async def get_mean_trend_extended(request: MeanTrendExtendedRequest):
+    if request.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    analyzer = sessions[request.session_id]
+    events = analyzer.find_pattern_events(tuple(request.pattern))
+    
+    if not events:
+        raise HTTPException(status_code=400, detail="No events found for pattern")
+    
+    try:
+        result = analyzer.calculate_mean_trend_extended(
+            events, 
+            request.column, 
+            request.target_length,
+            request.length_mode,
+            request.interpolation_method
+        )
+        return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -184,6 +184,17 @@ export interface MeanTrendResponse {
   event_count: number;
 }
 
+export interface MeanTrendExtendedResponse {
+  mean: number[];
+  std: number[];
+  normalized_segments: number[][];
+  raw_segments: number[][];
+  target_length: number;
+  average_length: number;
+  event_count: number;
+  lengths: number[];
+}
+
 export async function getMeanTrend(
   sessionId: string,
   pattern: number[],
@@ -195,6 +206,25 @@ export async function getMeanTrend(
     pattern,
     column,
     target_length: targetLength,
+  });
+  return response.data;
+}
+
+export async function getMeanTrendExtended(
+  sessionId: string,
+  pattern: number[],
+  column: number,
+  targetLength?: number,
+  lengthMode: 'average' | 'percentage' = 'average',
+  interpolationMethod: 'linear' | 'spline' = 'linear'
+): Promise<MeanTrendExtendedResponse> {
+  const response = await api.post('/api/mean-trend-extended', {
+    session_id: sessionId,
+    pattern,
+    column,
+    target_length: targetLength,
+    length_mode: lengthMode,
+    interpolation_method: interpolationMethod,
   });
   return response.data;
 }

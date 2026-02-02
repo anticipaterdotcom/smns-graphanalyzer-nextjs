@@ -1,18 +1,21 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Settings } from 'lucide-react';
+import { Play, Settings, AlertTriangle } from 'lucide-react';
 
 interface AnalysisControlsProps {
   columns: number;
   onAnalyze: (column: number, minDistance: number, frequency: number) => void;
   isLoading?: boolean;
+  hasExtrema?: boolean;
 }
 
-export default function AnalysisControls({ columns, onAnalyze, isLoading }: AnalysisControlsProps) {
+export default function AnalysisControls({ columns, onAnalyze, isLoading, hasExtrema }: AnalysisControlsProps) {
   const [column, setColumn] = useState(4);
   const [minDistance, setMinDistance] = useState(100);
   const [frequency, setFrequency] = useState(250);
+  const [showWarning, setShowWarning] = useState(false);
+  const [pendingAnalysis, setPendingAnalysis] = useState<{column: number, minDistance: number, frequency: number} | null>(null);
   const isFirstRender = useRef(true);
 
   useEffect(() => {
@@ -29,7 +32,20 @@ export default function AnalysisControls({ columns, onAnalyze, isLoading }: Anal
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAnalyze(column, minDistance, frequency);
+    if (hasExtrema) {
+      setPendingAnalysis({ column, minDistance, frequency });
+      setShowWarning(true);
+    } else {
+      onAnalyze(column, minDistance, frequency);
+    }
+  };
+
+  const confirmAnalysis = () => {
+    if (pendingAnalysis) {
+      onAnalyze(pendingAnalysis.column, pendingAnalysis.minDistance, pendingAnalysis.frequency);
+    }
+    setShowWarning(false);
+    setPendingAnalysis(null);
   };
 
   return (
@@ -88,6 +104,34 @@ export default function AnalysisControls({ columns, onAnalyze, isLoading }: Anal
         <Play className="w-4 h-4" />
         {isLoading ? 'Analyzing...' : 'Run Analysis'}
       </button>
+
+      {showWarning && (
+        <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-300">Warning: This will reset your extrema</p>
+              <p className="text-xs text-neutral-400 mt-1">Running analysis will replace all manually edited extrema with auto-detected ones.</p>
+              <div className="flex gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={confirmAnalysis}
+                  className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-500 transition-colors"
+                >
+                  Continue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowWarning(false)}
+                  className="px-3 py-1.5 bg-neutral-700 text-white text-sm font-medium rounded-lg hover:bg-neutral-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

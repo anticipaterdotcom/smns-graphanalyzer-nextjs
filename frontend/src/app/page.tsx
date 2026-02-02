@@ -1,14 +1,15 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { RefreshCw, Film, Upload, TrendingUp } from 'lucide-react';
+import { RefreshCw, Film, Upload, TrendingUp, Layers } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import AnalysisControls from '@/components/AnalysisControls';
 import GraphChart from '@/components/GraphChart';
 import PatternSelector from '@/components/PatternSelector';
-import MeanTrendChart from '@/components/MeanTrendChart';
+import MeanTrendsAnalyzer from '@/components/MeanTrendsAnalyzer';
 import ExtremaEditor from '@/components/ExtremaEditor';
 import StickFigurePlayer from '@/components/StickFigurePlayer';
+import ReferenceAnalysis from '@/components/ReferenceAnalysis';
 import SaveManager from '@/components/SaveManager';
 import { SaveState, createSaveState, addToVersionHistory } from '@/lib/saveManager';
 import {
@@ -19,12 +20,10 @@ import {
   addExtremum,
   removeExtremum,
   getStickFigureData,
-  getMeanTrend,
   restoreState,
   Extremum,
   PatternEvent,
   StickFigureData,
-  MeanTrendResponse,
 } from '@/lib/api';
 
 export default function Home() {
@@ -41,15 +40,14 @@ export default function Home() {
   const [currentColumn, setCurrentColumn] = useState(0);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
   const [showStickFigure, setShowStickFigure] = useState(false);
-  const [showMeanTrend, setShowMeanTrend] = useState(false);
-  const [showUploadForm, setShowUploadForm] = useState(false);
+    const [showUploadForm, setShowUploadForm] = useState(false);
   const [highlightedEvent, setHighlightedEvent] = useState<PatternEvent | null>(null);
   const [highlightedExtremumIndex, setHighlightedExtremumIndex] = useState<number | null>(null);
-  const [meanTrendData, setMeanTrendData] = useState<MeanTrendResponse | null>(null);
-  const [meanTrendLoading, setMeanTrendLoading] = useState(false);
-  const [meanTrendTargetLength, setMeanTrendTargetLength] = useState<number | 'auto'>('auto');
+    const [showReferenceAnalysis, setShowReferenceAnalysis] = useState(false);
+  const [showMeanTrendsAnalyzer, setShowMeanTrendsAnalyzer] = useState(false);
   const stickFigureRef = useRef<HTMLDivElement>(null);
-  const meanTrendRef = useRef<HTMLDivElement>(null);
+    const referenceAnalysisRef = useRef<HTMLDivElement>(null);
+  const meanTrendsAnalyzerRef = useRef<HTMLDivElement>(null);
 
   const autoSave = useCallback((action: string) => {
     if (data.length === 0) return;
@@ -88,11 +86,6 @@ export default function Home() {
         setSelectedPattern(defaultPattern);
         const patternResult = await getPatternEvents(result.session_id, defaultPattern);
         setEvents(patternResult.events);
-        
-        if (patternResult.events.length >= 2) {
-          const meanResult = await getMeanTrend(result.session_id, defaultPattern, defaultColumn);
-          setMeanTrendData(meanResult);
-        }
       } catch (err) {
         setShowUploadForm(true);
       } finally {
@@ -137,12 +130,6 @@ export default function Home() {
         const patternResult = await getPatternEvents(sessionId, defaultPattern);
         setEvents(patternResult.events);
         
-        if (patternResult.events.length >= 2) {
-          const meanResult = await getMeanTrend(sessionId, defaultPattern, column);
-          setMeanTrendData(meanResult);
-        } else {
-          setMeanTrendData(null);
-        }
         autoSave(`Analysis col ${column}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Analysis failed');
@@ -162,15 +149,6 @@ export default function Home() {
         const result = await getPatternEvents(sessionId, pattern);
         setEvents(result.events);
         
-        if (result.events.length >= 2) {
-          setMeanTrendLoading(true);
-          const targetLen = meanTrendTargetLength === 'auto' ? undefined : meanTrendTargetLength;
-          const meanResult = await getMeanTrend(sessionId, pattern, currentColumn, targetLen);
-          setMeanTrendData(meanResult);
-          setMeanTrendLoading(false);
-        } else {
-          setMeanTrendData(null);
-        }
         autoSave(`Pattern ${pattern.join('-')}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Pattern detection failed');
@@ -178,7 +156,7 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [sessionId, currentColumn, meanTrendTargetLength, autoSave]
+    [sessionId, autoSave]
   );
 
   const handleAddExtremum = useCallback(
@@ -245,27 +223,7 @@ export default function Home() {
     setStickFigureData(null);
     setShowStickFigure(false);
     setShowUploadForm(true);
-    setMeanTrendData(null);
   }, []);
-
-  const handleMeanTrendTargetLengthChange = useCallback(
-    async (value: number | 'auto') => {
-      setMeanTrendTargetLength(value);
-      if (!sessionId || events.length < 2) return;
-      
-      setMeanTrendLoading(true);
-      try {
-        const targetLen = value === 'auto' ? undefined : value;
-        const meanResult = await getMeanTrend(sessionId, selectedPattern, currentColumn, targetLen);
-        setMeanTrendData(meanResult);
-      } catch (err) {
-        console.error('Failed to update mean trend:', err);
-      } finally {
-        setMeanTrendLoading(false);
-      }
-    },
-    [sessionId, selectedPattern, currentColumn, events.length]
-  );
 
   const handleOpenStickFigure = useCallback(async () => {
     if (!sessionId) return;
@@ -298,19 +256,13 @@ export default function Home() {
       setData(state.data);
       setColumns(state.columns);
       setShowUploadForm(false);
-      setMeanTrendData(null);
-      setShowMeanTrend(false);
       setShowStickFigure(false);
+      setShowMeanTrendsAnalyzer(false);
       
       await restoreState(sessionId, state.extrema);
       
       const patternResult = await getPatternEvents(sessionId, state.selectedPattern);
       setEvents(patternResult.events);
-      
-      if (patternResult.events.length >= 2) {
-        const meanResult = await getMeanTrend(sessionId, state.selectedPattern, state.currentColumn);
-        setMeanTrendData(meanResult);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to restore state');
     } finally {
@@ -370,14 +322,25 @@ export default function Home() {
                 <div className="w-px h-6 bg-white/10" />
                 <button
                   onClick={() => {
-                    setShowMeanTrend(true);
-                    setTimeout(() => meanTrendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                    setShowMeanTrendsAnalyzer(true);
+                    setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
                   }}
                   disabled={isLoading || events.length < 2}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-500 hover:to-pink-500 transition-all disabled:opacity-50"
                 >
                   <TrendingUp className="w-3.5 h-3.5" />
                   Trend
+                </button>
+                <button
+                  onClick={() => {
+                    setShowReferenceAnalysis(true);
+                    setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                  }}
+                  disabled={isLoading || events.length < 1}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-sm font-medium rounded-lg hover:from-orange-500 hover:to-amber-500 transition-all disabled:opacity-50"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Ref
                 </button>
                 <button
                   onClick={handleOpenStickFigure}
@@ -417,7 +380,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-8">
-            <AnalysisControls columns={columns} onAnalyze={handleAnalyze} isLoading={isLoading} />
+            <AnalysisControls columns={columns} onAnalyze={handleAnalyze} isLoading={isLoading} hasExtrema={extrema.length > 0} />
 
             <GraphChart
               data={data}
@@ -449,23 +412,36 @@ export default function Home() {
               </div>
             )}
 
-            {showMeanTrend && events.length >= 2 && (
-              <div ref={meanTrendRef}>
-                <MeanTrendChart
-                  data={meanTrendData}
-                  isLoading={meanTrendLoading}
-                  targetLength={meanTrendTargetLength}
-                  onTargetLengthChange={handleMeanTrendTargetLengthChange}
-                  onClose={() => setShowMeanTrend(false)}
-                />
-              </div>
-            )}
-
             {showStickFigure && (
               <div ref={stickFigureRef}>
                 <StickFigurePlayer
                   data={stickFigureData}
                   onClose={() => setShowStickFigure(false)}
+                />
+              </div>
+            )}
+
+            {showMeanTrendsAnalyzer && sessionId && (
+              <div ref={meanTrendsAnalyzerRef}>
+                <MeanTrendsAnalyzer
+                  sessionId={sessionId}
+                  pattern={selectedPattern}
+                  column={currentColumn}
+                  events={events}
+                  onClose={() => setShowMeanTrendsAnalyzer(false)}
+                />
+              </div>
+            )}
+
+            {showReferenceAnalysis && sessionId && (
+              <div ref={referenceAnalysisRef}>
+                <ReferenceAnalysis
+                  sessionId={sessionId}
+                  analyzedColumn={currentColumn}
+                  analyzedData={data}
+                  events={events}
+                  totalColumns={columns}
+                  onClose={() => setShowReferenceAnalysis(false)}
                 />
               </div>
             )}

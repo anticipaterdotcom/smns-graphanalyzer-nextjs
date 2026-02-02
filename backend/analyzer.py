@@ -4,6 +4,7 @@ Converted from MATLAB Graph_Analyzer_v2025_03_08.m
 """
 import numpy as np
 from scipy.signal import find_peaks
+from scipy.interpolate import interp1d
 from typing import List, Tuple, Optional
 import json
 from dataclasses import dataclass
@@ -220,7 +221,8 @@ class GraphAnalyzer:
         return self.raw_data[:, column] - first_value
     
     def calculate_mean_trend(self, events: List[dict], column: int, 
-                              target_length: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+                              target_length: Optional[int] = None,
+                              interpolation_method: str = 'linear') -> Tuple[np.ndarray, np.ndarray]:
         if self.raw_data is None or not events:
             raise ValueError("No data or events")
         
@@ -236,13 +238,71 @@ class GraphAnalyzer:
         for segment in segments:
             x_old = np.linspace(0, 1, len(segment))
             x_new = np.linspace(0, 1, target_length)
-            interpolated.append(np.interp(x_new, x_old, segment))
+            if interpolation_method == 'spline' and len(segment) >= 4:
+                try:
+                    f = interp1d(x_old, segment, kind='cubic', fill_value='extrapolate')
+                    interpolated.append(f(x_new))
+                except:
+                    interpolated.append(np.interp(x_new, x_old, segment))
+            else:
+                interpolated.append(np.interp(x_new, x_old, segment))
         
         interpolated = np.array(interpolated)
         mean_trend = np.mean(interpolated, axis=0)
         std_trend = np.std(interpolated, axis=0)
         
         return mean_trend, std_trend
+    
+    def calculate_mean_trend_extended(self, events: List[dict], column: int,
+                                       target_length: Optional[int] = None,
+                                       length_mode: str = 'average',
+                                       interpolation_method: str = 'linear') -> dict:
+        """Extended mean trend calculation returning all data for visualization."""
+        if self.raw_data is None or not events:
+            raise ValueError("No data or events")
+        
+        raw_segments = []
+        for event in events:
+            segment = self.raw_data[event['start_index']:event['end_index']+1, column].tolist()
+            raw_segments.append(segment)
+        
+        lengths = [len(s) for s in raw_segments]
+        avg_length = int(np.mean(lengths))
+        
+        if length_mode == 'percentage':
+            final_length = 100
+        elif target_length is not None:
+            final_length = target_length
+        else:
+            final_length = avg_length
+        
+        normalized_segments = []
+        for segment in raw_segments:
+            x_old = np.linspace(0, 1, len(segment))
+            x_new = np.linspace(0, 1, final_length)
+            if interpolation_method == 'spline' and len(segment) >= 4:
+                try:
+                    f = interp1d(x_old, segment, kind='cubic', fill_value='extrapolate')
+                    normalized_segments.append(f(x_new).tolist())
+                except:
+                    normalized_segments.append(np.interp(x_new, x_old, segment).tolist())
+            else:
+                normalized_segments.append(np.interp(x_new, x_old, segment).tolist())
+        
+        normalized_arr = np.array(normalized_segments)
+        mean_trend = np.mean(normalized_arr, axis=0)
+        std_trend = np.std(normalized_arr, axis=0)
+        
+        return {
+            'mean': mean_trend.tolist(),
+            'std': std_trend.tolist(),
+            'normalized_segments': normalized_segments,
+            'raw_segments': raw_segments,
+            'target_length': final_length,
+            'average_length': avg_length,
+            'event_count': len(events),
+            'lengths': lengths
+        }
     
     def get_reference_column_data(self, column: int) -> np.ndarray:
         if self.raw_data is None:
