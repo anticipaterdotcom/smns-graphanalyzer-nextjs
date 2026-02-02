@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef } from 'react';
+import { Download, Image } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -31,6 +32,8 @@ export default function GraphChart({
   highlightRange,
   highlightIndex,
 }: GraphChartProps) {
+  const chartRef = useRef<HTMLDivElement>(null);
+
   const chartData = useMemo(() => {
     return data.map((value, index) => ({
       index,
@@ -107,6 +110,61 @@ export default function GraphChart({
     return [yMin, yMax];
   }, [data]);
 
+  const exportImage = useCallback(async (format: 'png' | 'svg') => {
+    if (!chartRef.current) return;
+    const svgElement = chartRef.current.querySelector('svg');
+    if (!svgElement) return;
+
+    if (format === 'svg') {
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const blob = new Blob([svgData], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `signal_graph.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const img = new window.Image();
+      canvas.width = svgElement.clientWidth * 2;
+      canvas.height = svgElement.clientHeight * 2;
+      img.onload = () => {
+        if (ctx) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `signal_graph.jpg`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          }, 'image/jpeg', 0.95);
+        }
+      };
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    }
+  }, []);
+
+  const exportCSV = useCallback(() => {
+    const headers = ['index', 'value'];
+    const rows = data.map((val, i) => [i, val]);
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `signal_graph.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [data]);
+
   if (data.length === 0) {
     return (
       <div className="card p-8 text-center text-neutral-400">
@@ -131,7 +189,7 @@ export default function GraphChart({
         </div>
       </div>
 
-      <div className="h-[400px] rounded-xl bg-neutral-900/50 p-4">
+      <div ref={chartRef} className="h-[400px] rounded-xl bg-neutral-900/50 p-4">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={enhancedChartData} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
@@ -215,9 +273,34 @@ export default function GraphChart({
         </ResponsiveContainer>
       </div>
 
-      <p className="text-xs text-neutral-500 mt-4">
-        Click on the chart to add/remove extrema. Total points: {data.length}
-      </p>
+      <div className="flex items-center justify-between mt-4">
+        <p className="text-xs text-neutral-500">
+          Click on the chart to add/remove extrema. Total points: {data.length}
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+          >
+            <Download className="w-3 h-3" />
+            CSV
+          </button>
+          <button
+            onClick={() => exportImage('png')}
+            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+          >
+            <Image className="w-3 h-3" />
+            JPG
+          </button>
+          <button
+            onClick={() => exportImage('svg')}
+            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+          >
+            <Image className="w-3 h-3" />
+            SVG
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { X, Layers } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { X, Layers, Download, Image } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -34,6 +34,7 @@ export default function ReferenceAnalysis({
   const [referenceColumn, setReferenceColumn] = useState(0);
   const [referenceData, setReferenceData] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadReferenceData = async () => {
@@ -102,6 +103,61 @@ export default function ReferenceAnalysis({
 
   const columnOptions = Array.from({ length: totalColumns }, (_, i) => i);
 
+  const exportImage = useCallback(async (format: 'png' | 'svg') => {
+    if (!chartRef.current) return;
+    const svgElement = chartRef.current.querySelector('svg');
+    if (!svgElement) return;
+
+    if (format === 'svg') {
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const blob = new Blob([svgData], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reference_analysis.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const img = new window.Image();
+      canvas.width = svgElement.clientWidth * 2;
+      canvas.height = svgElement.clientHeight * 2;
+      img.onload = () => {
+        if (ctx) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `reference_analysis.jpg`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          }, 'image/jpeg', 0.95);
+        }
+      };
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    }
+  }, []);
+
+  const exportCSV = useCallback(() => {
+    const headers = ['index', `col${analyzedColumn + 1}`, `col${referenceColumn + 1}`];
+    const rows = analyzedData.map((val, i) => [i, val, referenceData[i] ?? '']);
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reference_analysis.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [analyzedColumn, referenceColumn, analyzedData, referenceData]);
+
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-6">
@@ -140,7 +196,7 @@ export default function ReferenceAnalysis({
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div ref={chartRef} className="space-y-4">
         <div>
           <p className="text-sm font-medium text-neutral-300 mb-2">
             Analysed Data from Column {analyzedColumn + 1}
@@ -251,9 +307,34 @@ export default function ReferenceAnalysis({
         </div>
       </div>
 
-      <p className="text-xs text-neutral-500 mt-4 text-center">
-        Yellow/Blue highlighted areas show detected pattern regions across both columns
-      </p>
+      <div className="flex items-center justify-between mt-4">
+        <p className="text-xs text-neutral-500">
+          Yellow/Blue highlighted areas show detected pattern regions across both columns
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+          >
+            <Download className="w-3 h-3" />
+            CSV
+          </button>
+          <button
+            onClick={() => exportImage('png')}
+            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+          >
+            <Image className="w-3 h-3" />
+            JPG
+          </button>
+          <button
+            onClick={() => exportImage('svg')}
+            className="flex items-center gap-1 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-xs text-neutral-300 hover:bg-neutral-700"
+          >
+            <Image className="w-3 h-3" />
+            SVG
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
