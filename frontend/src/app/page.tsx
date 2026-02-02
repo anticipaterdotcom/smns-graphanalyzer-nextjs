@@ -37,6 +37,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editAction, setEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
+  const [snapToPeak, setSnapToPeak] = useState(true);
   const [currentColumn, setCurrentColumn] = useState(0);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
   const [showStickFigure, setShowStickFigure] = useState(false);
@@ -160,10 +161,10 @@ export default function Home() {
   );
 
   const handleAddExtremum = useCallback(
-    async (index: number, type: string) => {
+    async (index: number, type: string, epsilon: number = 20) => {
       if (!sessionId) return;
       try {
-        const newExt = await addExtremum(sessionId, index, type);
+        const newExt = await addExtremum(sessionId, index, type, epsilon);
         setExtrema((prev) => [...prev, newExt].sort((a, b) => a.index - b.index));
         
         // Re-run pattern detection
@@ -207,7 +208,7 @@ export default function Home() {
       if (editAction === 'remove') {
         handleRemoveExtremum(index);
       } else {
-        handleAddExtremum(index, editAction === 'add-max' ? 'max' : 'min');
+        handleAddExtremum(index, editAction === 'add-max' ? 'max' : 'min', 0);
       }
     },
     [editMode, editAction, handleAddExtremum, handleRemoveExtremum]
@@ -403,6 +404,8 @@ export default function Home() {
                   onEditActionChange={setEditAction}
                   extrema={extrema}
                   onExtremumHover={setHighlightedExtremumIndex}
+                  snapToPeak={snapToPeak}
+                  onSnapToPeakChange={setSnapToPeak}
                 />
                 <PatternSelector
                   onPatternSelect={handlePatternSelect}
@@ -421,19 +424,18 @@ export default function Home() {
               </div>
             )}
 
-            {showMeanTrendsAnalyzer && sessionId && (
+            {sessionId && data.length > 0 && events.length >= 2 && (
               <div ref={meanTrendsAnalyzerRef}>
                 <MeanTrendsAnalyzer
                   sessionId={sessionId}
                   pattern={selectedPattern}
                   column={currentColumn}
                   events={events}
-                  onClose={() => setShowMeanTrendsAnalyzer(false)}
                 />
               </div>
             )}
 
-            {showReferenceAnalysis && sessionId && (
+            {sessionId && data.length > 0 && (
               <div ref={referenceAnalysisRef}>
                 <ReferenceAnalysis
                   sessionId={sessionId}
@@ -441,7 +443,6 @@ export default function Home() {
                   analyzedData={data}
                   events={events}
                   totalColumns={columns}
-                  onClose={() => setShowReferenceAnalysis(false)}
                 />
               </div>
             )}

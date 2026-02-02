@@ -29,18 +29,20 @@ export interface AnalyzeResponse {
 export interface PatternEvent {
   start_value: number;
   start_time: number;
+  start_index: number;
   inflexion_value: number;
   inflexion_time: number;
+  inflexion_index: number;
   end_value: number;
   end_time: number;
+  end_index: number;
   shift_start_to_inflexion: number;
   shift_inflexion_to_end: number;
   time_start_to_inflexion: number;
   time_inflexion_to_end: number;
   cycle_time: number;
-  pattern: string;
-  start_index: number;
-  end_index: number;
+  intercycle_time: number | null;
+  pattern_type: string;
 }
 
 export async function loadDefaultData(delimiter: string = ';'): Promise<UploadResponse> {

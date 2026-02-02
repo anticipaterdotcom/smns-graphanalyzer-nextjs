@@ -20,7 +20,7 @@ interface ReferenceAnalysisProps {
   analyzedData: number[];
   events: PatternEvent[];
   totalColumns: number;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 export default function ReferenceAnalysis({
@@ -68,13 +68,36 @@ export default function ReferenceAnalysis({
     return referenceData.map((value, index) => ({ index, value }));
   }, [referenceData]);
 
-  const sharedYDomain = useMemo(() => {
+  const getXAxisConfig = useMemo(() => {
+    const len = Math.max(analyzedData.length, referenceData.length);
+    if (len === 0) return { ticks: [1], max: 100 };
+    let step: number;
+    if (len <= 50) step = 5;
+    else if (len <= 100) step = 10;
+    else if (len <= 200) step = 20;
+    else if (len <= 500) step = 50;
+    else if (len <= 1000) step = 100;
+    else if (len <= 2000) step = 200;
+    else step = 500;
+    
+    const ticks: number[] = [1];
+    const max = Math.ceil(len / step) * step;
+    for (let i = step; i <= max; i += step) {
+      ticks.push(i);
+    }
+    return { ticks, max };
+  }, [analyzedData.length, referenceData.length]);
+
+  const sharedYDomain = useMemo((): [number, number] => {
     const allValues = [...analyzedData, ...referenceData].filter(v => v !== 0);
-    if (allValues.length === 0) return [0, 100];
-    const min = Math.min(...allValues);
-    const max = Math.max(...allValues);
-    const padding = (max - min) * 0.1;
-    return [min - padding, max + padding];
+    if (allValues.length === 0) return [0, 10];
+    const maxVal = Math.max(...allValues);
+    const minVal = Math.min(...allValues);
+    let yMax: number;
+    if (maxVal < 5) yMax = 5;
+    else yMax = Math.ceil(maxVal / 10) * 10;
+    const yMin = Math.floor(minVal / 10) * 10;
+    return [yMin, yMax];
   }, [analyzedData, referenceData]);
 
   const columnOptions = Array.from({ length: totalColumns }, (_, i) => i);
@@ -106,12 +129,14 @@ export default function ReferenceAnalysis({
               ))}
             </select>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -125,16 +150,17 @@ export default function ReferenceAnalysis({
               <LineChart data={analyzedChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis 
-                  dataKey="index" 
+                  dataKey="index"
+                  type="number"
                   stroke="#64748b" 
                   fontSize={10}
-                  tickFormatter={(v) => `${v}`}
+                  domain={[1, getXAxisConfig.max]}
+                  ticks={getXAxisConfig.ticks}
                 />
                 <YAxis 
                   stroke="#64748b" 
                   fontSize={10} 
                   domain={sharedYDomain}
-                  tickFormatter={(v) => v.toFixed(0)}
                 />
                 <Tooltip
                   contentStyle={{
@@ -179,16 +205,17 @@ export default function ReferenceAnalysis({
               <LineChart data={referenceChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis 
-                  dataKey="index" 
+                  dataKey="index"
+                  type="number"
                   stroke="#64748b" 
                   fontSize={10}
-                  tickFormatter={(v) => `${v}`}
+                  domain={[1, getXAxisConfig.max]}
+                  ticks={getXAxisConfig.ticks}
                 />
                 <YAxis 
                   stroke="#64748b" 
                   fontSize={10} 
                   domain={sharedYDomain}
-                  tickFormatter={(v) => v.toFixed(0)}
                 />
                 <Tooltip
                   contentStyle={{

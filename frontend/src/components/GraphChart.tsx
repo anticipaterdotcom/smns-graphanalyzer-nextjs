@@ -77,6 +77,36 @@ export default function GraphChart({
     }));
   }, [chartData, isInPatternRange, isInHighlightRange]);
 
+  const getXAxisConfig = useMemo(() => {
+    const len = data.length;
+    let step: number;
+    if (len <= 50) step = 5;
+    else if (len <= 100) step = 10;
+    else if (len <= 200) step = 20;
+    else if (len <= 500) step = 50;
+    else if (len <= 1000) step = 100;
+    else if (len <= 2000) step = 200;
+    else step = 500;
+    
+    const ticks: number[] = [1];
+    const max = Math.ceil(len / step) * step;
+    for (let i = step; i <= max; i += step) {
+      ticks.push(i);
+    }
+    return { ticks, max };
+  }, [data.length]);
+
+  const getYAxisDomain = useMemo((): [number, number] => {
+    if (data.length === 0) return [0, 10];
+    const maxVal = Math.max(...data);
+    const minVal = Math.min(...data);
+    let yMax: number;
+    if (maxVal < 5) yMax = 5;
+    else yMax = Math.ceil(maxVal / 10) * 10;
+    const yMin = Math.floor(minVal / 10) * 10;
+    return [yMin, yMax];
+  }, [data]);
+
   if (data.length === 0) {
     return (
       <div className="card p-8 text-center text-neutral-400">
@@ -107,11 +137,13 @@ export default function GraphChart({
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
             <XAxis
               dataKey="index"
+              type="number"
               stroke="#64748b"
               fontSize={12}
-              tickFormatter={(value) => `${value}`}
+              domain={[1, getXAxisConfig.max]}
+              ticks={getXAxisConfig.ticks}
             />
-            <YAxis stroke="#64748b" fontSize={12} />
+            <YAxis stroke="#64748b" fontSize={12} domain={getYAxisDomain} />
             <Tooltip
               contentStyle={{
                 backgroundColor: 'rgba(15, 23, 42, 0.95)',

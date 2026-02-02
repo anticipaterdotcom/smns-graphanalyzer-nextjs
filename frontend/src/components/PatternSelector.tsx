@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Filter } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Filter, Download } from 'lucide-react';
 import { PatternEvent } from '@/lib/api';
 
 interface PatternSelectorProps {
@@ -16,6 +16,59 @@ export default function PatternSelector({
   onEventHover,
 }: PatternSelectorProps) {
   const [pattern, setPattern] = useState<number[]>([0, 1, 0]);
+
+  const exportCSV = useCallback(() => {
+    if (events.length === 0) return;
+
+    const headers = [
+      'Cycle',
+      'Pattern Type',
+      'Start Value',
+      'Start Time (s)',
+      'Start Index',
+      'Inflexion Value',
+      'Inflexion Time (s)',
+      'Inflexion Index',
+      'End Value',
+      'End Time (s)',
+      'End Index',
+      'Shift Start→Inflexion',
+      'Shift Inflexion→End',
+      'Time Start→Inflexion (s)',
+      'Time Inflexion→End (s)',
+      'Cycle Time (s)',
+      'Intercycle Time (s)',
+    ];
+
+    const rows = events.map((event, i) => [
+      i + 1,
+      event.pattern_type,
+      event.start_value.toFixed(4),
+      event.start_time.toFixed(4),
+      event.start_index,
+      event.inflexion_value.toFixed(4),
+      event.inflexion_time.toFixed(4),
+      event.inflexion_index,
+      event.end_value.toFixed(4),
+      event.end_time.toFixed(4),
+      event.end_index,
+      event.shift_start_to_inflexion.toFixed(4),
+      event.shift_inflexion_to_end.toFixed(4),
+      event.time_start_to_inflexion.toFixed(4),
+      event.time_inflexion_to_end.toFixed(4),
+      event.cycle_time.toFixed(4),
+      event.intercycle_time !== null ? event.intercycle_time.toFixed(4) : '',
+    ]);
+
+    const csvContent = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pattern_events_${events[0]?.pattern_type || 'LHL'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [events]);
 
   const patterns = [
     { value: [0, 1, 0], label: 'Low → High → Low' },
@@ -55,9 +108,18 @@ export default function PatternSelector({
 
         {events.length > 0 && (
           <>
-            <div className="text-sm text-neutral-400">
-              Found <span className="font-semibold text-primary-400">{events.length}</span> events
-              matching pattern
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-neutral-400">
+                Found <span className="font-semibold text-primary-400">{events.length}</span> events
+                matching pattern
+              </div>
+              <button
+                onClick={exportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-500 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
+              </button>
             </div>
 
             <div className="max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-neutral-900/50">

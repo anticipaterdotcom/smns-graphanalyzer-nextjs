@@ -10,7 +10,7 @@ interface Extremum {
 }
 
 interface ExtremaEditorProps {
-  onAddExtremum: (index: number, type: string) => void;
+  onAddExtremum: (index: number, type: string, epsilon: number) => void;
   onRemoveExtremum: (index: number) => void;
   isActive: boolean;
   onToggleActive: () => void;
@@ -18,6 +18,8 @@ interface ExtremaEditorProps {
   onEditActionChange: (action: 'add-max' | 'add-min' | 'remove') => void;
   extrema: Extremum[];
   onExtremumHover?: (index: number | null) => void;
+  snapToPeak: boolean;
+  onSnapToPeakChange: (snap: boolean) => void;
 }
 
 export default function ExtremaEditor({
@@ -29,6 +31,8 @@ export default function ExtremaEditor({
   onEditActionChange,
   extrema,
   onExtremumHover,
+  snapToPeak,
+  onSnapToPeakChange,
 }: ExtremaEditorProps) {
   const [inputIndex, setInputIndex] = useState('');
   
@@ -37,12 +41,13 @@ export default function ExtremaEditor({
 
   const handleAction = () => {
     const index = parseInt(inputIndex);
-    if (isNaN(index)) return;
+    if (isNaN(index) || !editAction) return;
 
     if (editAction === 'remove') {
       onRemoveExtremum(index);
     } else {
-      onAddExtremum(index, editAction === 'add-max' ? 'max' : 'min');
+      const epsilon = snapToPeak ? 20 : 0;
+      onAddExtremum(index, editAction === 'add-max' ? 'max' : 'min', epsilon);
     }
     setInputIndex('');
   };
@@ -124,18 +129,29 @@ export default function ExtremaEditor({
           />
           <button
             onClick={handleAction}
-            disabled={!inputIndex}
+            disabled={!inputIndex || !editAction}
             className="px-5 py-2.5 bg-neutral-700 border border-neutral-600 text-white font-medium rounded-xl hover:bg-neutral-600 transition-colors disabled:opacity-50"
           >
             Apply
           </button>
         </div>
 
-        <p className="text-xs text-neutral-500">
-          {isActive
-            ? 'Click on the chart to add/remove extrema at that position.'
-            : 'Enable click mode or enter an index manually to edit extrema.'}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-neutral-500">
+            {isActive
+              ? 'Click on the chart to add/remove extrema at that position.'
+              : 'Enable click mode or enter an index manually to edit extrema.'}
+          </p>
+          <label className="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={snapToPeak}
+              onChange={(e) => onSnapToPeakChange(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-neutral-600 bg-neutral-800 text-primary-500 focus:ring-primary-500/20"
+            />
+            Snap to peak
+          </label>
+        </div>
 
         {/* Extrema Lists */}
         <div className="grid grid-cols-2 gap-4 mt-4">

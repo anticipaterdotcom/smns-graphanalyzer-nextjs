@@ -64,16 +64,20 @@ class GraphAnalyzer:
             raise ValueError("No data loaded")
         
         col = self.current_column
-        start = max(0, index - epsilon)
-        end = min(len(self.raw_data), index + epsilon)
-        window = self.raw_data[start:end, col]
         
-        if extremum_type == 'max':
-            local_idx = np.argmax(window)
+        if epsilon == 0:
+            actual_idx = max(0, min(index, len(self.raw_data) - 1))
         else:
-            local_idx = np.argmin(window)
-        
-        actual_idx = start + local_idx
+            start = max(0, index - epsilon)
+            end = min(len(self.raw_data), index + epsilon + 1)
+            window = self.raw_data[start:end, col]
+            
+            if extremum_type == 'max':
+                local_idx = np.argmax(window)
+            else:
+                local_idx = np.argmin(window)
+            
+            actual_idx = start + local_idx
         new_extremum = Extremum(
             value=float(self.raw_data[actual_idx, col]),
             index=int(actual_idx),
@@ -111,20 +115,33 @@ class GraphAnalyzer:
                 event = {
                     'start_value': self.extrema[i].value,
                     'start_time': self.extrema[i].index * self.time_per_frame,
+                    'start_index': self.extrema[i].index,
                     'inflexion_value': self.extrema[i+1].value,
                     'inflexion_time': self.extrema[i+1].index * self.time_per_frame,
+                    'inflexion_index': self.extrema[i+1].index,
                     'end_value': self.extrema[i+2].value,
                     'end_time': self.extrema[i+2].index * self.time_per_frame,
+                    'end_index': self.extrema[i+2].index,
                     'shift_start_to_inflexion': abs(self.extrema[i].value - self.extrema[i+1].value),
                     'shift_inflexion_to_end': abs(self.extrema[i+2].value - self.extrema[i+1].value),
                     'time_start_to_inflexion': (self.extrema[i+1].index - self.extrema[i].index) * self.time_per_frame,
                     'time_inflexion_to_end': (self.extrema[i+2].index - self.extrema[i+1].index) * self.time_per_frame,
                     'cycle_time': (self.extrema[i+2].index - self.extrema[i].index) * self.time_per_frame,
-                    'pattern': 'lowHighLow' if pattern[0] == 0 else 'HighLowHigh',
-                    'start_index': self.extrema[i].index,
-                    'end_index': self.extrema[i+2].index
+                    'pattern_type': 'LHL' if pattern[0] == 0 else 'HLH',
                 }
                 events.append(event)
+        
+        for i in range(len(events)):
+            if i < len(events) - 1:
+                next_start = events[i + 1]['start_time']
+                current_end = events[i]['end_time']
+                if next_start > current_end:
+                    events[i]['intercycle_time'] = next_start - current_end
+                else:
+                    events[i]['intercycle_time'] = None
+            else:
+                events[i]['intercycle_time'] = None
+        
         return events
     
     def get_event_data(self, start_idx: int, end_idx: int, column: int) -> np.ndarray:
