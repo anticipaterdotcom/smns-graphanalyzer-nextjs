@@ -277,7 +277,7 @@ export default function GraphChart({
 
       <div className="flex items-center justify-between mt-4">
         <p className="text-xs text-neutral-500">
-          Click on the chart to add/remove extrema. Total points: {data.length}
+          Total points: {data.length}
         </p>
         <div className="flex gap-2">
           <button
