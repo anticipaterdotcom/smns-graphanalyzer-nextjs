@@ -578,63 +578,6 @@ export default function ReferenceAnalysis({
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-4">
-            <div className="bg-neutral-800/50 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-blue-400">Maxima ({refMaxima.length})</span>
-                {editMode && editAction === 'add-max' && (
-                  <span className="text-xs text-orange-400">Click chart to add</span>
-                )}
-              </div>
-              <div className="max-h-24 overflow-y-auto space-y-1">
-                {refMaxima.map((ext: Extremum) => (
-                  <div 
-                    key={ext.index} 
-                    className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
-                    onMouseEnter={() => setLocalHighlightIndex(ext.index)}
-                    onMouseLeave={() => setLocalHighlightIndex(null)}
-                  >
-                    <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
-                    <button
-                      onClick={() => onRemoveExtremum(ext.index)}
-                      className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-                {refMaxima.length === 0 && <span className="text-xs text-neutral-500">No maxima</span>}
-              </div>
-            </div>
-            <div className="bg-neutral-800/50 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-emerald-400">Minima ({refMinima.length})</span>
-                {editMode && editAction === 'add-min' && (
-                  <span className="text-xs text-orange-400">Click chart to add</span>
-                )}
-              </div>
-              <div className="max-h-24 overflow-y-auto space-y-1">
-                {refMinima.map((ext: Extremum) => (
-                  <div 
-                    key={ext.index} 
-                    className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
-                    onMouseEnter={() => setLocalHighlightIndex(ext.index)}
-                    onMouseLeave={() => setLocalHighlightIndex(null)}
-                  >
-                    <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
-                    <button
-                      onClick={() => onRemoveExtremum(ext.index)}
-                      className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-                {refMinima.length === 0 && <span className="text-xs text-neutral-500">No minima</span>}
-              </div>
-            </div>
-          </div>
-
       <div className="mt-4 p-4 bg-neutral-900/50 rounded-xl">
         <div className="flex flex-wrap items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
@@ -756,12 +699,66 @@ export default function ReferenceAnalysis({
             </div>
           </div>
         )}
+
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="bg-neutral-800/50 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-blue-400">Maxima ({refMaxima.length})</span>
+              {editMode && editAction === 'add-max' && (
+                <span className="text-xs text-orange-400">Click chart to add</span>
+              )}
+            </div>
+            <div className="max-h-24 overflow-y-auto space-y-1">
+              {refMaxima.map((ext: Extremum) => (
+                <div
+                  key={ext.index}
+                  className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
+                  onMouseEnter={() => setLocalHighlightIndex(ext.index)}
+                  onMouseLeave={() => setLocalHighlightIndex(null)}
+                >
+                  <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
+                  <button
+                    onClick={() => onRemoveExtremum(ext.index)}
+                    className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {refMaxima.length === 0 && <span className="text-xs text-neutral-500">No maxima</span>}
+            </div>
+          </div>
+          <div className="bg-neutral-800/50 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-emerald-400">Minima ({refMinima.length})</span>
+              {editMode && editAction === 'add-min' && (
+                <span className="text-xs text-orange-400">Click chart to add</span>
+              )}
+            </div>
+            <div className="max-h-24 overflow-y-auto space-y-1">
+              {refMinima.map((ext: Extremum) => (
+                <div
+                  key={ext.index}
+                  className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
+                  onMouseEnter={() => setLocalHighlightIndex(ext.index)}
+                  onMouseLeave={() => setLocalHighlightIndex(null)}
+                >
+                  <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
+                  <button
+                    onClick={() => onRemoveExtremum(ext.index)}
+                    className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {refMinima.length === 0 && <span className="text-xs text-neutral-500">No minima</span>}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between mt-4">
-        <p className="text-xs text-neutral-500">
-          Click on bottom chart to add/remove extrema. Yellow/Blue areas show main trend cycles.
-        </p>
+      <div className="flex items-center justify-end mt-4">
         <div className="flex gap-2">
           <button
             onClick={exportCSV}
