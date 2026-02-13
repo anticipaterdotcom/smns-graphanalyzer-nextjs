@@ -53,6 +53,7 @@ interface ReferenceAnalysisProps {
   onEpsilonChange: (value: number) => void;
   onPatternChange: (pattern: number[]) => void;
   currentPattern: number[];
+  frequency: number;
 }
 
 export default function ReferenceAnalysis({
@@ -75,6 +76,7 @@ export default function ReferenceAnalysis({
   onEpsilonChange,
   onPatternChange,
   currentPattern,
+  frequency: propFrequency,
 }: ReferenceAnalysisProps) {
   const [topColumn, setTopColumn] = useState(analyzedColumn);
   const [bottomColumn, setBottomColumn] = useState(0);
@@ -85,7 +87,7 @@ export default function ReferenceAnalysis({
   
   const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>('low-high-low');
   const [refPatternEvents, setRefPatternEvents] = useState<RefPatternEvent[]>([]);
-  const [frequency, setFrequency] = useState(250);
+  const frequency = propFrequency;
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
   const [highlightRange, setHighlightRange] = useState<{start: number, end: number} | null>(null);
 
@@ -206,9 +208,13 @@ export default function ReferenceAnalysis({
         
         let mainCycleIndex = -1;
         let delayTime = 0;
+        const avgCycleLen = events.length > 0
+          ? events.reduce((sum, e) => sum + (e.end_index - e.start_index), 0) / events.length
+          : 100;
+        const tolerance = Math.round(avgCycleLen * 0.2);
         for (let j = 0; j < events.length; j++) {
           const mainEvent = events[j];
-          if (first.index >= mainEvent.start_index - 50 && first.index <= mainEvent.end_index + 50) {
+          if (first.index >= mainEvent.start_index - tolerance && first.index <= mainEvent.end_index + tolerance) {
             mainCycleIndex = j;
             delayTime = (first.index - mainEvent.start_index) / frequency;
             break;
@@ -259,10 +265,11 @@ export default function ReferenceAnalysis({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `reference_parameters.csv`;
+    const patternName = selectedPattern === 'low-high-low' ? 'LHL' : 'HLH';
+    a.download = `reference_parameters_${patternName}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [refPatternEvents, frequency]);
+  }, [refPatternEvents, frequency, selectedPattern]);
 
   const exportImage = useCallback(async (format: 'png' | 'svg') => {
     if (!chartRef.current) return;
@@ -673,6 +680,12 @@ export default function ReferenceAnalysis({
                   className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'add-min' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
                 >
                   <Plus className="w-3 h-3" /> Min
+                </button>
+                <button
+                  onClick={() => onEditActionChange('remove')}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'remove' ? 'bg-red-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                >
+                  <Minus className="w-3 h-3" /> Remove
                 </button>
               </>
             )}

@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useCallback, useRef } from 'react';
-import { Download, Image } from 'lucide-react';
+import { useMemo, useCallback, useRef, useState } from 'react';
+import { Image, Plus, Minus, MousePointer, X } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -12,7 +12,8 @@ import {
   ResponsiveContainer,
   ReferenceDot,
 } from 'recharts';
-import { Extremum } from '@/lib/api';
+import { Extremum, PatternEvent } from '@/lib/api';
+import { Download } from 'lucide-react';
 
 interface GraphChartProps {
   data: number[];
@@ -22,6 +23,19 @@ interface GraphChartProps {
   patternRanges?: { start: number; end: number }[];
   highlightRange?: { start: number; end: number } | null;
   highlightIndex?: number | null;
+  editMode?: boolean;
+  editAction?: 'add-max' | 'add-min' | 'remove' | null;
+  onToggleEditMode?: () => void;
+  onEditActionChange?: (action: 'add-max' | 'add-min' | 'remove') => void;
+  onAddExtremum?: (index: number, type: string, epsilon?: number) => void;
+  onRemoveExtremum?: (index: number) => void;
+  epsilon?: number;
+  onEpsilonChange?: (value: number) => void;
+  highlightedExtremumIndex?: number | null;
+  events?: PatternEvent[];
+  onPatternChange?: (pattern: number[]) => void;
+  onEventHover?: (event: PatternEvent | null) => void;
+  onClose?: () => void;
 }
 
 export default function GraphChart({
@@ -32,9 +46,23 @@ export default function GraphChart({
   patternRanges = [],
   highlightRange,
   highlightIndex,
+  editMode = false,
+  editAction,
+  onToggleEditMode,
+  onEditActionChange,
+  onAddExtremum,
+  onRemoveExtremum,
+  epsilon = 20,
+  onEpsilonChange,
+  highlightedExtremumIndex,
+  events = [],
+  onPatternChange,
+  onEventHover,
+  onClose,
 }: GraphChartProps) {
   const isHighLowHigh = selectedPattern[1] === 0;
   const chartRef = useRef<HTMLDivElement>(null);
+  const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
 
   const chartData = useMemo(() => {
     return data.map((value, index) => ({
@@ -49,14 +77,23 @@ export default function GraphChart({
   const handleClick = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (e: any) => {
-      if (!onChartClick || !e) return;
-      
+      if (!e) return;
       const index = e.activePayload?.[0]?.payload?.index ?? e.activeLabel;
-      if (index !== undefined && index !== null) {
-        onChartClick(Number(index));
+      if (index === undefined || index === null) return;
+      const numIndex = Number(index);
+
+      if (editMode && editAction) {
+        if (editAction === 'remove') {
+          onRemoveExtremum?.(numIndex);
+        } else {
+          onAddExtremum?.(numIndex, editAction === 'add-max' ? 'max' : 'min', epsilon);
+        }
+        return;
       }
+
+      onChartClick?.(numIndex);
     },
-    [onChartClick]
+    [onChartClick, editMode, editAction, onAddExtremum, onRemoveExtremum, epsilon]
   );
 
   const isInPatternRange = useCallback(
@@ -112,6 +149,45 @@ export default function GraphChart({
     return [yMin, yMax];
   }, [data]);
 
+  const buildCSV = useCallback(() => {
+    if (events.length === 0) return '';
+    const headers = [
+      'Cycle', 'Pattern Type',
+      'Start Value', 'Start Time (s)', 'Start Index',
+      'Inflexion Value', 'Inflexion Time (s)', 'Inflexion Index',
+      'End Value', 'End Time (s)', 'End Index',
+      'Shift Start-Inflexion', 'Shift Inflexion-End',
+      'Time Start-Inflexion (s)', 'Time Inflexion-End (s)',
+      'Cycle Time (s)', 'Intercycle Time (s)',
+    ];
+    const rows = events.map((evt, i) => [
+      i + 1, evt.pattern_type,
+      evt.start_value.toFixed(4), evt.start_time.toFixed(4), evt.start_index,
+      evt.inflexion_value.toFixed(4), evt.inflexion_time.toFixed(4), evt.inflexion_index,
+      evt.end_value.toFixed(4), evt.end_time.toFixed(4), evt.end_index,
+      evt.shift_start_to_inflexion.toFixed(4), evt.shift_inflexion_to_end.toFixed(4),
+      evt.time_start_to_inflexion.toFixed(4), evt.time_inflexion_to_end.toFixed(4),
+      evt.cycle_time.toFixed(4),
+      evt.intercycle_time !== null ? evt.intercycle_time.toFixed(4) : '',
+    ]);
+    return [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+  }, [events]);
+
+  const exportCSV = useCallback(() => {
+    const csv = buildCSV();
+    if (!csv) return;
+    const filename = `pattern_events_${events[0]?.pattern_type || 'LHL'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [buildCSV, events]);
+
   const exportImage = useCallback(async (format: 'png' | 'svg') => {
     if (!chartRef.current) return;
     const svgElement = chartRef.current.querySelector('svg');
@@ -123,7 +199,7 @@ export default function GraphChart({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `signal_graph.svg`;
+      a.download = `main_trend.svg`;
       a.click();
       URL.revokeObjectURL(url);
     } else {
@@ -143,7 +219,7 @@ export default function GraphChart({
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `signal_graph.jpg`;
+              a.download = `main_trend.jpg`;
               a.click();
               URL.revokeObjectURL(url);
             }
@@ -154,18 +230,6 @@ export default function GraphChart({
     }
   }, []);
 
-  const exportCSV = useCallback(() => {
-    const headers = ['index', 'value'];
-    const rows = data.map((val, i) => [i, val]);
-    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `signal_graph.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [data]);
 
   if (data.length === 0) {
     return (
@@ -179,7 +243,7 @@ export default function GraphChart({
     <div className="card p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-semibold text-white">Main Trend</h3>
-        <div className="flex gap-4 text-sm">
+        <div className="flex items-center gap-4 text-sm">
           <span className="flex items-center gap-2 text-neutral-300">
             <span className="w-3 h-3 rounded-full bg-primary-500" />
             Maxima ({maxima.length})
@@ -188,10 +252,18 @@ export default function GraphChart({
             <span className="w-3 h-3 rounded-full bg-emerald-500" />
             Minima ({minima.length})
           </span>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div ref={chartRef} className="h-[400px] rounded-xl bg-neutral-900/50 p-4">
+      <div ref={chartRef} className={`h-[400px] rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : ''}`}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={enhancedChartData} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
@@ -238,28 +310,34 @@ export default function GraphChart({
               dot={false}
               isAnimationActive={false}
             />
-            {maxima.map((ext, i) => (
-              <ReferenceDot
-                key={`max-${ext.index}-${i}`}
-                x={ext.index}
-                y={ext.value}
-                r={6}
-                fill={isHighLowHigh ? '#10b981' : '#3b82f6'}
-                stroke="#0f172a"
-                strokeWidth={2}
-              />
-            ))}
-            {minima.map((ext, i) => (
-              <ReferenceDot
-                key={`min-${ext.index}-${i}`}
-                x={ext.index}
-                y={ext.value}
-                r={6}
-                fill={isHighLowHigh ? '#3b82f6' : '#10b981'}
-                stroke="#0f172a"
-                strokeWidth={2}
-              />
-            ))}
+            {maxima.map((ext, i) => {
+              const isHighlighted = highlightedExtremumIndex === ext.index || localHighlightIndex === ext.index;
+              return (
+                <ReferenceDot
+                  key={`max-${ext.index}-${i}`}
+                  x={ext.index}
+                  y={ext.value}
+                  r={isHighlighted ? 10 : 6}
+                  fill={isHighLowHigh ? '#10b981' : '#3b82f6'}
+                  stroke={isHighlighted ? '#fff' : '#0f172a'}
+                  strokeWidth={isHighlighted ? 3 : 2}
+                />
+              );
+            })}
+            {minima.map((ext, i) => {
+              const isHighlighted = highlightedExtremumIndex === ext.index || localHighlightIndex === ext.index;
+              return (
+                <ReferenceDot
+                  key={`min-${ext.index}-${i}`}
+                  x={ext.index}
+                  y={ext.value}
+                  r={isHighlighted ? 10 : 6}
+                  fill={isHighLowHigh ? '#3b82f6' : '#10b981'}
+                  stroke={isHighlighted ? '#fff' : '#0f172a'}
+                  strokeWidth={isHighlighted ? 3 : 2}
+                />
+              );
+            })}
             {highlightIndex !== null && highlightIndex !== undefined && (
               <ReferenceDot
                 key="highlight"
@@ -275,18 +353,191 @@ export default function GraphChart({
         </ResponsiveContainer>
       </div>
 
+      {onPatternChange && (
+        <div className="mt-4 p-4 bg-neutral-900/50 rounded-xl">
+          <div className="flex flex-wrap items-center gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-neutral-400">Pattern:</span>
+              <button
+                onClick={() => onPatternChange([0, 1, 0])}
+                className={`px-3 py-1 text-xs rounded ${selectedPattern[1] === 1 ? 'bg-primary-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+              >
+                Low → High → Low
+              </button>
+              <button
+                onClick={() => onPatternChange([1, 0, 1])}
+                className={`px-3 py-1 text-xs rounded ${selectedPattern[1] === 0 ? 'bg-primary-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+              >
+                High → Low → High
+              </button>
+            </div>
+            {onToggleEditMode && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-400">Edit:</span>
+                <button
+                  onClick={onToggleEditMode}
+                  className={`flex items-center gap-1 px-3 py-1 text-xs rounded ${editMode ? 'bg-primary-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                >
+                  <MousePointer className="w-3 h-3" />
+                  {editMode ? 'ON' : 'OFF'}
+                </button>
+                {editMode && (
+                  <>
+                    <button
+                      onClick={() => onEditActionChange?.('add-max')}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'add-max' ? 'bg-blue-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                    >
+                      <Plus className="w-3 h-3" /> Max
+                    </button>
+                    <button
+                      onClick={() => onEditActionChange?.('add-min')}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'add-min' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                    >
+                      <Plus className="w-3 h-3" /> Min
+                    </button>
+                    <button
+                      onClick={() => onEditActionChange?.('remove')}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'remove' ? 'bg-red-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                    >
+                      <Minus className="w-3 h-3" /> Remove
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-neutral-400">Epsilon:</span>
+              <input
+                type="number"
+                value={epsilon}
+                onChange={(e) => onEpsilonChange?.(Number(e.target.value))}
+                className="w-16 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+                min={1}
+                max={100}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-neutral-400">Extrema:</span>
+              <span className="text-xs text-blue-400">{maxima.length} Max</span>
+              <span className="text-xs text-emerald-400">{minima.length} Min</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-neutral-400">Events:</span>
+              <span className="text-xs text-primary-400 font-semibold">{events.length}</span>
+            </div>
+          </div>
+
+          {events.length > 0 && (
+            <>
+            <div className="flex items-center justify-end mb-2">
+              <button
+                onClick={exportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-500 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export Parameters
+              </button>
+            </div>
+            <div className="overflow-x-auto max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-neutral-900">
+                  <tr className="text-neutral-400 border-b border-white/10">
+                    <th className="px-2 py-1 text-left">#</th>
+                    <th className="px-2 py-1 text-left">Start</th>
+                    <th className="px-2 py-1 text-left">Inflexion</th>
+                    <th className="px-2 py-1 text-left">End</th>
+                    <th className="px-2 py-1 text-left">Cycle Time</th>
+                    <th className="px-2 py-1 text-left">Intercycle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((evt, i) => (
+                    <tr
+                      key={i}
+                      className="text-neutral-300 border-b border-white/5 cursor-pointer hover:bg-primary-500/20 transition-colors"
+                      onMouseEnter={() => onEventHover?.(evt)}
+                      onMouseLeave={() => onEventHover?.(null)}
+                    >
+                      <td className="px-2 py-1">{i + 1}</td>
+                      <td className="px-2 py-1">{evt.start_value.toFixed(2)}</td>
+                      <td className="px-2 py-1">{evt.inflexion_value.toFixed(2)}</td>
+                      <td className="px-2 py-1">{evt.end_value.toFixed(2)}</td>
+                      <td className="px-2 py-1">{evt.cycle_time.toFixed(3)}s</td>
+                      <td className="px-2 py-1">{evt.intercycle_time !== null ? `${evt.intercycle_time.toFixed(3)}s` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {onRemoveExtremum && (
+        <div className="mt-3 grid grid-cols-2 gap-4">
+          <div className="bg-neutral-800/50 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-blue-400">Maxima ({maxima.length})</span>
+              {editMode && editAction === 'add-max' && (
+                <span className="text-xs text-primary-400">Click chart to add</span>
+              )}
+            </div>
+            <div className="max-h-24 overflow-y-auto space-y-1">
+              {maxima.map((ext, i) => (
+                <div
+                  key={`max-${ext.index}-${i}`}
+                  className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
+                  onMouseEnter={() => setLocalHighlightIndex(ext.index)}
+                  onMouseLeave={() => setLocalHighlightIndex(null)}
+                >
+                  <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
+                  <button
+                    onClick={() => onRemoveExtremum(ext.index)}
+                    className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {maxima.length === 0 && <span className="text-xs text-neutral-500">No maxima</span>}
+            </div>
+          </div>
+          <div className="bg-neutral-800/50 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-emerald-400">Minima ({minima.length})</span>
+              {editMode && editAction === 'add-min' && (
+                <span className="text-xs text-primary-400">Click chart to add</span>
+              )}
+            </div>
+            <div className="max-h-24 overflow-y-auto space-y-1">
+              {minima.map((ext, i) => (
+                <div
+                  key={`min-${ext.index}-${i}`}
+                  className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
+                  onMouseEnter={() => setLocalHighlightIndex(ext.index)}
+                  onMouseLeave={() => setLocalHighlightIndex(null)}
+                >
+                  <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
+                  <button
+                    onClick={() => onRemoveExtremum(ext.index)}
+                    className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {minima.length === 0 && <span className="text-xs text-neutral-500">No minima</span>}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mt-4">
         <p className="text-xs text-neutral-500">
           Total points: {data.length}
         </p>
         <div className="flex gap-2">
-          <button
-            onClick={exportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            CSV
-          </button>
           <button
             onClick={() => exportImage('png')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"

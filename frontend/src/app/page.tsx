@@ -39,11 +39,13 @@ export default function Home() {
   const [editAction, setEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
   const [epsilon, setEpsilon] = useState(20);
   const [currentColumn, setCurrentColumn] = useState(0);
+  const [currentFrequency, setCurrentFrequency] = useState(250);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
   const [showStickFigure, setShowStickFigure] = useState(false);
     const [showUploadForm, setShowUploadForm] = useState(false);
   const [highlightedEvent, setHighlightedEvent] = useState<PatternEvent | null>(null);
   const [highlightedExtremumIndex, setHighlightedExtremumIndex] = useState<number | null>(null);
+  const [showMainTrend, setShowMainTrend] = useState(true);
     const [showReferenceAnalysis, setShowReferenceAnalysis] = useState(false);
   const [showMeanTrendsAnalyzer, setShowMeanTrendsAnalyzer] = useState(false);
   const [showAnalysisParams, setShowAnalysisParams] = useState(false);
@@ -79,6 +81,7 @@ export default function Home() {
         const defaultMinDistance = 100;
         const defaultFrequency = 250;
         setCurrentColumn(defaultColumn);
+        setCurrentFrequency(defaultFrequency);
         
         const analysisResult = await analyzeData(result.session_id, defaultColumn, defaultMinDistance, defaultFrequency);
         setExtrema(analysisResult.extrema);
@@ -122,6 +125,7 @@ export default function Home() {
       setIsLoading(true);
       setError(null);
       setCurrentColumn(column);
+      setCurrentFrequency(frequency);
       try {
         const analysisResult = await analyzeData(sessionId, column, minDistance, frequency);
         setExtrema(analysisResult.extrema);
@@ -333,26 +337,45 @@ export default function Home() {
               <>
                 <div className="w-px h-6 bg-white/10" />
                 <button
-                  onClick={() => {
-                    setShowMeanTrendsAnalyzer(true);
-                    setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-                  }}
-                  disabled={isLoading || events.length < 2}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-500 hover:to-pink-500 transition-all disabled:opacity-50"
+                  onClick={() => setShowMainTrend(!showMainTrend)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                    showMainTrend
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white'
+                      : 'bg-neutral-800 border border-white/10 text-neutral-400 hover:text-white hover:bg-neutral-700'
+                  }`}
                 >
                   <TrendingUp className="w-3.5 h-3.5" />
-                  Trend
+                  Main
                 </button>
                 <button
                   onClick={() => {
-                    setShowReferenceAnalysis(true);
-                    setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                    setShowReferenceAnalysis(!showReferenceAnalysis);
+                    if (!showReferenceAnalysis) setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
                   }}
                   disabled={isLoading || events.length < 1}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-sm font-medium rounded-lg hover:from-orange-500 hover:to-amber-500 transition-all disabled:opacity-50"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
+                    showReferenceAnalysis
+                      ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white'
+                      : 'bg-neutral-800 border border-white/10 text-neutral-400 hover:text-white hover:bg-neutral-700'
+                  }`}
                 >
                   <Layers className="w-3.5 h-3.5" />
                   Ref
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMeanTrendsAnalyzer(!showMeanTrendsAnalyzer);
+                    if (!showMeanTrendsAnalyzer) setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                  }}
+                  disabled={isLoading || events.length < 2}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
+                    showMeanTrendsAnalyzer
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                      : 'bg-neutral-800 border border-white/10 text-neutral-400 hover:text-white hover:bg-neutral-700'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  Mean
                 </button>
                 <button
                   onClick={handleOpenStickFigure}
@@ -398,16 +421,33 @@ export default function Home() {
               </div>
             )}
 
-            <GraphChart
+            {showMainTrend && <GraphChart
               data={data}
               extrema={extrema}
               selectedPattern={selectedPattern}
               patternRanges={patternRanges}
               highlightRange={highlightedEvent ? { start: highlightedEvent.start_index, end: highlightedEvent.end_index } : null}
               highlightIndex={highlightedExtremumIndex}
-            />
+              editMode={editMode}
+              editAction={editAction}
+              onToggleEditMode={() => {
+                const newEditMode = !editMode;
+                setEditMode(newEditMode);
+                if (newEditMode) setEditAction('add-max');
+              }}
+              onEditActionChange={setEditAction}
+              onAddExtremum={handleAddExtremum}
+              onRemoveExtremum={handleRemoveExtremum}
+              epsilon={epsilon}
+              onEpsilonChange={setEpsilon}
+              highlightedExtremumIndex={highlightedExtremumIndex}
+              events={events}
+              onPatternChange={handlePatternSelect}
+              onEventHover={setHighlightedEvent}
+              onClose={() => setShowMainTrend(false)}
+            />}
 
-            {sessionId && data.length > 0 && (
+            {showReferenceAnalysis && sessionId && data.length > 0 && (
               <div ref={referenceAnalysisRef}>
                 <ReferenceAnalysis
                   sessionId={sessionId}
@@ -433,6 +473,7 @@ export default function Home() {
                   onEpsilonChange={setEpsilon}
                   onPatternChange={handlePatternSelect}
                   currentPattern={selectedPattern}
+                  frequency={currentFrequency}
                 />
               </div>
             )}
@@ -447,13 +488,14 @@ export default function Home() {
               </div>
             )}
 
-            {sessionId && data.length > 0 && events.length >= 2 && (
+            {showMeanTrendsAnalyzer && sessionId && data.length > 0 && events.length >= 2 && (
               <div ref={meanTrendsAnalyzerRef}>
                 <MeanTrendsAnalyzer
                   sessionId={sessionId}
                   pattern={selectedPattern}
                   column={currentColumn}
                   events={events}
+                  onClose={() => setShowMeanTrendsAnalyzer(false)}
                 />
               </div>
             )}
