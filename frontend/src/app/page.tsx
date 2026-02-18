@@ -13,7 +13,6 @@ import ReferenceAnalysis from '@/components/ReferenceAnalysis';
 import SaveManager from '@/components/SaveManager';
 import { SaveState, createSaveState, addToVersionHistory } from '@/lib/saveManager';
 import {
-  loadDefaultData,
   uploadFile,
   analyzeData,
   getPatternEvents,
@@ -70,48 +69,33 @@ export default function Home() {
   }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns]);
 
   useEffect(() => {
-    const loadDefaultAndAnalyze = async () => {
-      setIsLoading(true);
-      try {
-        const result = await loadDefaultData();
-        setSessionId(result.session_id);
-        setColumns(result.columns);
-        
-        const defaultColumn = 4;
-        const defaultMinDistance = 100;
-        const defaultFrequency = 250;
-        setCurrentColumn(defaultColumn);
-        setCurrentFrequency(defaultFrequency);
-        
-        const analysisResult = await analyzeData(result.session_id, defaultColumn, defaultMinDistance, defaultFrequency);
-        setExtrema(analysisResult.extrema);
-        setData(analysisResult.column_data);
-        
-        // Auto-detect patterns with default pattern (Low → High → Low)
-        const defaultPattern = [0, 1, 0];
-        setSelectedPattern(defaultPattern);
-        const patternResult = await getPatternEvents(result.session_id, defaultPattern);
-        setEvents(patternResult.events);
-      } catch (err) {
-        setShowUploadForm(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadDefaultAndAnalyze();
+    setShowUploadForm(true);
   }, []);
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  const handleFileUpload = useCallback(async (file: File, delimiter: string, trimZeros: boolean) => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await uploadFile(file);
+      const result = await uploadFile(file, delimiter, trimZeros);
       setSessionId(result.session_id);
       setColumns(result.columns);
-      setExtrema([]);
-      setEvents([]);
-      setData([]);
       setShowUploadForm(false);
+      setShowMainTrend(true);
+
+      const defaultColumn = 0;
+      const defaultMinDistance = 100;
+      const defaultFrequency = 250;
+      setCurrentColumn(defaultColumn);
+      setCurrentFrequency(defaultFrequency);
+
+      const analysisResult = await analyzeData(result.session_id, defaultColumn, defaultMinDistance, defaultFrequency);
+      setExtrema(analysisResult.extrema);
+      setData(analysisResult.column_data);
+
+      const defaultPattern = [0, 1, 0];
+      setSelectedPattern(defaultPattern);
+      const patternResult = await getPatternEvents(result.session_id, defaultPattern);
+      setEvents(patternResult.events);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -445,6 +429,8 @@ export default function Home() {
               onPatternChange={handlePatternSelect}
               onEventHover={setHighlightedEvent}
               onClose={() => setShowMainTrend(false)}
+              sessionId={sessionId}
+              frequency={currentFrequency}
             />}
 
             {showReferenceAnalysis && sessionId && data.length > 0 && (

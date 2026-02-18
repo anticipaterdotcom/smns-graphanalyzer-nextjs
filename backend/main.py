@@ -66,13 +66,20 @@ class RestoreStateRequest(BaseModel):
 
 
 @app.get("/api/load-default")
-async def load_default_data(delimiter: str = ";"):
+async def load_default_data(delimiter: str = ";", trim_zeros: bool = False):
     if not DEFAULT_CSV_PATH.exists():
         raise HTTPException(status_code=404, detail="Default CSV file not found")
     
     try:
         df = pd.read_csv(DEFAULT_CSV_PATH, delimiter=delimiter, header=None)
         data = df.values.astype(float)
+        
+        if trim_zeros:
+            non_zero_mask = np.any(data != 0, axis=1)
+            if non_zero_mask.any():
+                first = np.argmax(non_zero_mask)
+                last = len(non_zero_mask) - 1 - np.argmax(non_zero_mask[::-1])
+                data = data[first:last+1]
         
         session_id = f"session_{len(sessions)}"
         analyzer = GraphAnalyzer()
@@ -89,12 +96,59 @@ async def load_default_data(delimiter: str = ";"):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), delimiter: str = ";"):
+@app.post("/api/preview")
+async def preview_file(file: UploadFile = File(...), delimiter: str = ";", trim_zeros: bool = False):
     try:
         content = await file.read()
         df = pd.read_csv(io.BytesIO(content), delimiter=delimiter, header=None)
         data = df.values.astype(float)
+        total_rows = data.shape[0]
+        total_columns = data.shape[1]
+        zero_rows_start = 0
+        zero_rows_end = 0
+        for i in range(total_rows):
+            if np.all(data[i] == 0):
+                zero_rows_start += 1
+            else:
+                break
+        for i in range(total_rows - 1, -1, -1):
+            if np.all(data[i] == 0):
+                zero_rows_end += 1
+            else:
+                break
+        if trim_zeros:
+            non_zero_mask = np.any(data != 0, axis=1)
+            if non_zero_mask.any():
+                first = np.argmax(non_zero_mask)
+                last = len(non_zero_mask) - 1 - np.argmax(non_zero_mask[::-1])
+                data = data[first:last+1]
+        preview_rows = min(20, data.shape[0])
+        preview_data = data[:preview_rows].tolist()
+        return {
+            "total_rows": total_rows,
+            "total_columns": total_columns,
+            "rows_after_trim": data.shape[0],
+            "zero_rows_start": zero_rows_start,
+            "zero_rows_end": zero_rows_end,
+            "preview": preview_data,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...), delimiter: str = ";", trim_zeros: bool = False):
+    try:
+        content = await file.read()
+        df = pd.read_csv(io.BytesIO(content), delimiter=delimiter, header=None)
+        data = df.values.astype(float)
+        
+        if trim_zeros:
+            non_zero_mask = np.any(data != 0, axis=1)
+            if non_zero_mask.any():
+                first = np.argmax(non_zero_mask)
+                last = len(non_zero_mask) - 1 - np.argmax(non_zero_mask[::-1])
+                data = data[first:last+1]
         
         session_id = f"session_{len(sessions)}"
         analyzer = GraphAnalyzer()
@@ -249,6 +303,82 @@ async def export_events(request: PatternRequest):
         })
     
     return {"parameters": parameters}
+
+
+class ExportAllColumnsRequest(BaseModel):
+    session_id: str
+    pattern: List[int]
+    min_distance: int = 10
+    frequency: float = 100.0
+
+
+@app.post("/api/export/all-columns")
+async def export_all_columns(request: ExportAllColumnsRequest):
+    """Run extrema detection + pattern events on every column and return results."""
+    if request.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    analyzer = sessions[request.session_id]
+    if analyzer.raw_data is None:
+        raise HTTPException(status_code=400, detail="No data loaded")
+
+    num_cols = analyzer.raw_data.shape[1]
+    time_per_frame = 1.0 / request.frequency
+    results = {}
+
+    for col in range(num_cols):
+        signal = analyzer.raw_data[:, col]
+        from scipy.signal import find_peaks as _find_peaks
+        max_idx, _ = _find_peaks(signal, distance=request.min_distance)
+        min_idx, _ = _find_peaks(-signal, distance=request.min_distance)
+
+        extrema_list = []
+        for i in max_idx:
+            extrema_list.append({"value": float(signal[i]), "index": int(i), "type": 1})
+        for i in min_idx:
+            extrema_list.append({"value": float(signal[i]), "index": int(i), "type": 0})
+        extrema_list.sort(key=lambda x: x["index"])
+
+        events = []
+        pattern = tuple(request.pattern)
+        for i in range(len(extrema_list) - 2):
+            if (extrema_list[i]["type"] == pattern[0] and
+                extrema_list[i+1]["type"] == pattern[1] and
+                extrema_list[i+2]["type"] == pattern[2]):
+                e0, e1, e2 = extrema_list[i], extrema_list[i+1], extrema_list[i+2]
+                event = {
+                    "start_value": e0["value"],
+                    "start_time": e0["index"] * time_per_frame,
+                    "start_index": e0["index"],
+                    "inflexion_value": e1["value"],
+                    "inflexion_time": e1["index"] * time_per_frame,
+                    "inflexion_index": e1["index"],
+                    "end_value": e2["value"],
+                    "end_time": e2["index"] * time_per_frame,
+                    "end_index": e2["index"],
+                    "shift_start_to_inflexion": abs(e0["value"] - e1["value"]),
+                    "shift_inflexion_to_end": abs(e2["value"] - e1["value"]),
+                    "time_start_to_inflexion": (e1["index"] - e0["index"]) * time_per_frame,
+                    "time_inflexion_to_end": (e2["index"] - e1["index"]) * time_per_frame,
+                    "cycle_time": (e2["index"] - e0["index"]) * time_per_frame,
+                    "pattern_type": "LHL" if pattern[0] == 0 else "HLH",
+                }
+                events.append(event)
+
+        for i in range(len(events)):
+            if i < len(events) - 1:
+                gap = events[i+1]["start_time"] - events[i]["end_time"]
+                events[i]["intercycle_time"] = gap if gap > 0 else None
+            else:
+                events[i]["intercycle_time"] = None
+
+        results[str(col)] = {
+            "column": col,
+            "extrema_count": len(extrema_list),
+            "events": events,
+        }
+
+    return {"columns": num_cols, "results": results}
 
 
 class StickFigureRequest(BaseModel):

@@ -12,7 +12,7 @@ import {
   ResponsiveContainer,
   ReferenceDot,
 } from 'recharts';
-import { Extremum, PatternEvent } from '@/lib/api';
+import { Extremum, PatternEvent, exportAllColumns } from '@/lib/api';
 import { Download } from 'lucide-react';
 
 interface GraphChartProps {
@@ -36,6 +36,8 @@ interface GraphChartProps {
   onPatternChange?: (pattern: number[]) => void;
   onEventHover?: (event: PatternEvent | null) => void;
   onClose?: () => void;
+  sessionId?: string;
+  frequency?: number;
 }
 
 export default function GraphChart({
@@ -59,6 +61,8 @@ export default function GraphChart({
   onPatternChange,
   onEventHover,
   onClose,
+  sessionId,
+  frequency = 250,
 }: GraphChartProps) {
   const isHighLowHigh = selectedPattern[1] === 0;
   const chartRef = useRef<HTMLDivElement>(null);
@@ -173,20 +177,57 @@ export default function GraphChart({
     return [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
   }, [events]);
 
-  const exportCSV = useCallback(() => {
-    const csv = buildCSV();
-    if (!csv) return;
-    const filename = `pattern_events_${events[0]?.pattern_type || 'LHL'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [buildCSV, events]);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportCSV = useCallback(async () => {
+    if (!sessionId) return;
+    setIsExporting(true);
+    try {
+      const result = await exportAllColumns(sessionId, selectedPattern, 10, frequency);
+      const patternName = selectedPattern[1] === 1 ? 'LHL' : 'HLH';
+      const headers = [
+        'Column', 'Cycle', 'Pattern Type',
+        'Start Value', 'Start Time (s)', 'Start Index',
+        'Inflexion Value', 'Inflexion Time (s)', 'Inflexion Index',
+        'End Value', 'End Time (s)', 'End Index',
+        'Shift Start-Inflexion', 'Shift Inflexion-End',
+        'Time Start-Inflexion (s)', 'Time Inflexion-End (s)',
+        'Cycle Time (s)', 'Intercycle Time (s)',
+      ];
+      const rows: string[][] = [];
+      for (let col = 0; col < result.columns; col++) {
+        const colResult = result.results[String(col)];
+        if (!colResult || colResult.events.length === 0) continue;
+        colResult.events.forEach((evt, i) => {
+          rows.push([
+            `Col ${col + 1}`, String(i + 1), evt.pattern_type,
+            evt.start_value.toFixed(4), evt.start_time.toFixed(4), String(evt.start_index),
+            evt.inflexion_value.toFixed(4), evt.inflexion_time.toFixed(4), String(evt.inflexion_index),
+            evt.end_value.toFixed(4), evt.end_time.toFixed(4), String(evt.end_index),
+            evt.shift_start_to_inflexion.toFixed(4), evt.shift_inflexion_to_end.toFixed(4),
+            evt.time_start_to_inflexion.toFixed(4), evt.time_inflexion_to_end.toFixed(4),
+            evt.cycle_time.toFixed(4),
+            evt.intercycle_time !== null ? evt.intercycle_time.toFixed(4) : '',
+          ]);
+        });
+      }
+      const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+      const filename = `parameters_all_columns_${patternName}_${new Date().toISOString().slice(0, 10)}.csv`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [sessionId, selectedPattern, frequency]);
 
   const exportImage = useCallback(async (format: 'png' | 'svg') => {
     if (!chartRef.current) return;
@@ -435,7 +476,7 @@ export default function GraphChart({
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-500 transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
-                Export Parameters
+                {isExporting ? 'Exporting...' : 'Export Parameters'}
               </button>
             </div>
             <div className="overflow-x-auto max-h-48 overflow-y-auto">

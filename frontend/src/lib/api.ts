@@ -45,15 +45,34 @@ export interface PatternEvent {
   pattern_type: string;
 }
 
-export async function loadDefaultData(delimiter: string = ';'): Promise<UploadResponse> {
-  const response = await api.get(`/api/load-default?delimiter=${encodeURIComponent(delimiter)}`);
+export async function loadDefaultData(delimiter: string = ';', trimZeros: boolean = false): Promise<UploadResponse> {
+  const params = new URLSearchParams({ delimiter, trim_zeros: String(trimZeros) });
+  const response = await api.get(`/api/load-default?${params}`);
   return response.data;
 }
 
-export async function uploadFile(file: File, delimiter: string = ';'): Promise<UploadResponse> {
+export interface PreviewResponse {
+  total_rows: number;
+  total_columns: number;
+  rows_after_trim: number;
+  zero_rows_start: number;
+  zero_rows_end: number;
+  preview: number[][];
+}
+
+export async function previewFile(file: File, delimiter: string = ';', trimZeros: boolean = false): Promise<PreviewResponse> {
   const formData = new FormData();
   formData.append('file', file);
-  const response = await api.post(`/api/upload?delimiter=${encodeURIComponent(delimiter)}`, formData);
+  const params = new URLSearchParams({ delimiter, trim_zeros: String(trimZeros) });
+  const response = await api.post(`/api/preview?${params}`, formData);
+  return response.data;
+}
+
+export async function uploadFile(file: File, delimiter: string = ';', trimZeros: boolean = false): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const params = new URLSearchParams({ delimiter, trim_zeros: String(trimZeros) });
+  const response = await api.post(`/api/upload?${params}`, formData);
   return response.data;
 }
 
@@ -227,6 +246,30 @@ export async function getMeanTrendExtended(
     target_length: targetLength,
     length_mode: lengthMode,
     interpolation_method: interpolationMethod,
+  });
+  return response.data;
+}
+
+export interface AllColumnsExportResult {
+  columns: number;
+  results: Record<string, {
+    column: number;
+    extrema_count: number;
+    events: PatternEvent[];
+  }>;
+}
+
+export async function exportAllColumns(
+  sessionId: string,
+  pattern: number[],
+  minDistance: number = 10,
+  frequency: number = 100
+): Promise<AllColumnsExportResult> {
+  const response = await api.post('/api/export/all-columns', {
+    session_id: sessionId,
+    pattern,
+    min_distance: minDistance,
+    frequency,
   });
   return response.data;
 }
