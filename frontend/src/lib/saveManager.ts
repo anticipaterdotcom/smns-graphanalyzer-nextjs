@@ -13,6 +13,9 @@ export interface SaveState {
   columns: number;
   frequency?: number;
   minDistance?: number;
+  chartHeight?: number;
+  topChartHeight?: number;
+  bottomChartHeight?: number;
 }
 
 export interface VersionHistoryEntry {

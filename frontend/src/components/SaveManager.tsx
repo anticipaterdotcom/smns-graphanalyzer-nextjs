@@ -24,8 +24,9 @@ interface SaveManagerProps {
   events: PatternEvent[];
   data: number[];
   columns: number;
-  onLoadState: (state: SaveState) => void;
+  onLoadState: (state: SaveState, versionId?: string) => void;
   disabled?: boolean;
+  activeVersionId?: string;
 }
 
 export default function SaveManager({
@@ -38,6 +39,7 @@ export default function SaveManager({
   columns,
   onLoadState,
   disabled,
+  activeVersionId,
 }: SaveManagerProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<VersionHistoryEntry[]>([]);
@@ -126,7 +128,7 @@ export default function SaveManager({
   };
 
   const handleLoadFromHistory = (entry: VersionHistoryEntry) => {
-    onLoadState(entry.state);
+    onLoadState(entry.state, entry.id);
     setShowHistory(false);
   };
 
@@ -146,6 +148,10 @@ export default function SaveManager({
   const formatDate = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleString();
+  };
+
+  const isCurrentVersion = (entry: VersionHistoryEntry) => {
+    return activeVersionId === entry.id;
   };
 
   return (
@@ -273,32 +279,53 @@ export default function SaveManager({
                   No saved versions yet
                 </div>
               ) : (
-                history.map((entry) => (
-                  <div
-                    key={entry.id}
-                    onClick={() => handleLoadFromHistory(entry)}
-                    className="flex items-center justify-between p-3 bg-neutral-800/50 border border-white/5 rounded-xl hover:bg-neutral-800 cursor-pointer transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Clock className="w-4 h-4 text-neutral-500" />
-                      <div>
-                        <p className="text-sm font-medium text-white">{entry.name}</p>
-                        <p className="text-xs text-neutral-500">{formatDate(entry.timestamp)}</p>
+                history.map((entry) => {
+                  const isCurrent = isCurrentVersion(entry);
+                  return (
+                    <div
+                      key={entry.id}
+                      onClick={() => handleLoadFromHistory(entry)}
+                      className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer transition-colors group ${
+                        isCurrent
+                          ? 'bg-emerald-600/20 border-emerald-500/50 ring-2 ring-emerald-500/30'
+                          : 'bg-neutral-800/50 border-white/5 hover:bg-neutral-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {isCurrent ? (
+                          <Check className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-neutral-500" />
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className={`text-sm font-medium ${isCurrent ? 'text-emerald-400' : 'text-white'}`}>
+                              {entry.name}
+                            </p>
+                            {isCurrent && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full font-medium">
+                                ACTIVE
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-neutral-500">{formatDate(entry.timestamp)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-neutral-500">
+                          {entry.state.extrema.length} extrema
+                        </span>
+                        <button
+                          onClick={(e) => handleDeleteEntry(entry.id, e)}
+                          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-neutral-500">
-                        {entry.state.extrema.length} extrema
-                      </span>
-                      <button
-                        onClick={(e) => handleDeleteEntry(entry.id, e)}
-                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
+              
               )}
             </div>
 

@@ -11,7 +11,7 @@ import ExtremaEditor from '@/components/ExtremaEditor';
 import StickFigurePlayer from '@/components/StickFigurePlayer';
 import ReferenceAnalysis from '@/components/ReferenceAnalysis';
 import SaveManager from '@/components/SaveManager';
-import { SaveState, createSaveState, addToVersionHistory } from '@/lib/saveManager';
+import { SaveState, createSaveState, addToVersionHistory, getVersionHistory } from '@/lib/saveManager';
 import {
   uploadFile,
   analyzeData,
@@ -48,6 +48,10 @@ export default function Home() {
     const [showReferenceAnalysis, setShowReferenceAnalysis] = useState(false);
   const [showMeanTrendsAnalyzer, setShowMeanTrendsAnalyzer] = useState(false);
   const [showAnalysisParams, setShowAnalysisParams] = useState(false);
+  const [activeVersionId, setActiveVersionId] = useState<string | undefined>(undefined);
+  const [chartHeight, setChartHeight] = useState(400);
+  const [topChartHeight, setTopChartHeight] = useState(200);
+  const [bottomChartHeight, setBottomChartHeight] = useState(200);
   const stickFigureRef = useRef<HTMLDivElement>(null);
     const referenceAnalysisRef = useRef<HTMLDivElement>(null);
   const meanTrendsAnalyzerRef = useRef<HTMLDivElement>(null);
@@ -63,13 +67,45 @@ export default function Home() {
       events,
       data,
       columns,
-      `Auto: ${action}`
+      `Auto-save: ${action}`
     );
+    state.frequency = currentFrequency;
+    state.chartHeight = chartHeight;
+    state.topChartHeight = topChartHeight;
+    state.bottomChartHeight = bottomChartHeight;
     addToVersionHistory(state);
-  }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns]);
+  }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns, currentFrequency, chartHeight, topChartHeight, bottomChartHeight]);
 
   useEffect(() => {
-    setShowUploadForm(true);
+    const history = getVersionHistory();
+    if (history.length > 0) {
+      try {
+        const latest = history[0];
+        if (latest.state.data && latest.state.data.length > 0) {
+          setSessionId(latest.state.sessionId);
+          setColumns(latest.state.columns);
+          setData(latest.state.data);
+          setExtrema(latest.state.extrema);
+          setEvents(latest.state.events);
+          setSelectedPattern(latest.state.selectedPattern);
+          setCurrentColumn(latest.state.currentColumn);
+          setCurrentFrequency(latest.state.frequency || 250);
+          if (latest.state.chartHeight) setChartHeight(latest.state.chartHeight);
+          if (latest.state.topChartHeight) setTopChartHeight(latest.state.topChartHeight);
+          if (latest.state.bottomChartHeight) setBottomChartHeight(latest.state.bottomChartHeight);
+          setActiveVersionId(latest.id);
+          setShowUploadForm(false);
+          setShowMainTrend(true);
+        } else {
+          setShowUploadForm(true);
+        }
+      } catch (err) {
+        console.error('Failed to restore session:', err);
+        setShowUploadForm(true);
+      }
+    } else {
+      setShowUploadForm(true);
+    }
   }, []);
 
   const handleFileUpload = useCallback(async (file: File, delimiter: string, trimZeros: boolean) => {
@@ -114,13 +150,13 @@ export default function Home() {
         const analysisResult = await analyzeData(sessionId, column, minDistance, frequency);
         setExtrema(analysisResult.extrema);
         setData(analysisResult.column_data);
-        
+
         // Auto-detect patterns with default pattern (Low → High → Low)
         const defaultPattern = [0, 1, 0];
         setSelectedPattern(defaultPattern);
         const patternResult = await getPatternEvents(sessionId, defaultPattern);
         setEvents(patternResult.events);
-        
+
         autoSave(`Analysis col ${column}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Analysis failed');
@@ -152,44 +188,89 @@ export default function Home() {
 
   const handleAddExtremum = useCallback(
     async (index: number, type: string, epsilon: number = 20) => {
-      if (!sessionId) return;
+      if (data.length === 0) return;
       try {
-        const newExt = await addExtremum(sessionId, index, type, epsilon);
-        setExtrema((prev) => [...prev, newExt].sort((a, b) => a.index - b.index));
+        const window = data.slice(Math.max(0, index - epsilon), Math.min(data.length, index + epsilon + 1));
+        const localIndex = index - Math.max(0, index - epsilon);
+        let targetIndex = index;
+        let targetValue = data[index];
         
-        // Re-run pattern detection
-        if (selectedPattern.length > 0) {
-          const patternResult = await getPatternEvents(sessionId, selectedPattern);
-          setEvents(patternResult.events);
+        if (type === 'max') {
+          const maxIdx = window.reduce((maxI, val, i) => val > window[maxI] ? i : maxI, 0);
+          targetIndex = Math.max(0, index - epsilon) + maxIdx;
+          targetValue = window[maxIdx];
+        } else {
+          const minIdx = window.reduce((minI, val, i) => val < window[minI] ? i : minI, 0);
+          targetIndex = Math.max(0, index - epsilon) + minIdx;
+          targetValue = window[minIdx];
+        }
+        
+        const newExt: Extremum = { value: targetValue, index: targetIndex, type: type === 'max' ? 1 : 0 };
+        setExtrema((prev) => {
+          const filtered = prev.filter(e => Math.abs(e.index - targetIndex) >= 5);
+          return [...filtered, newExt].sort((a, b) => a.index - b.index);
+        });
+        
+        if (sessionId) {
+          try {
+            await addExtremum(sessionId, index, type, epsilon);
+            if (selectedPattern.length > 0) {
+              const patternResult = await getPatternEvents(sessionId, selectedPattern);
+              setEvents(patternResult.events);
+            }
+          } catch (err) {
+            console.warn('Backend sync failed, continuing with local state');
+          }
         }
         autoSave(`Add ${type}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add extremum');
       }
     },
-    [sessionId, selectedPattern, autoSave]
+    [data, sessionId, selectedPattern, autoSave]
   );
 
   const handleRemoveExtremum = useCallback(
     async (index: number) => {
-      if (!sessionId) return;
+      if (data.length === 0) return;
       try {
-        const result = await removeExtremum(sessionId, index);
-        if (result.success) {
-          setExtrema((prev) => prev.filter((e) => Math.abs(e.index - index) >= 15));
+        setExtrema((prev) => {
+          // Find the closest extremum to the clicked point
+          let closestExtremum: Extremum | null = null;
+          let minDistance = Infinity;
           
-          // Re-run pattern detection
-          if (selectedPattern.length > 0) {
-            const patternResult = await getPatternEvents(sessionId, selectedPattern);
-            setEvents(patternResult.events);
+          prev.forEach(e => {
+            const distance = Math.abs(e.index - index);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestExtremum = e;
+            }
+          });
+          
+          // Only remove if within reasonable range (50 points)
+          if (closestExtremum && minDistance <= 50) {
+            return prev.filter(e => e !== closestExtremum);
           }
-          autoSave('Remove extremum');
+          return prev;
+        });
+        
+        if (sessionId) {
+          try {
+            await removeExtremum(sessionId, index);
+            if (selectedPattern.length > 0) {
+              const patternResult = await getPatternEvents(sessionId, selectedPattern);
+              setEvents(patternResult.events);
+            }
+          } catch (err) {
+            console.warn('Backend sync failed, continuing with local state');
+          }
         }
+        autoSave('Remove extremum');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to remove extremum');
       }
     },
-    [sessionId, selectedPattern, autoSave]
+    [data, sessionId, selectedPattern, autoSave]
   );
 
   const handleChartClick = useCallback(
@@ -223,6 +304,9 @@ export default function Home() {
       // Use single column mode - animate the currently selected column as a signal trace
       const result = await getStickFigureData(sessionId, [], undefined, 24, currentColumn);
       setStickFigureData(result);
+      setShowMainTrend(false);
+      setShowReferenceAnalysis(false);
+      setShowMeanTrendsAnalyzer(false);
       setShowStickFigure(true);
       
       // Scroll to stick figure player after it renders
@@ -236,7 +320,7 @@ export default function Home() {
     }
   }, [sessionId, currentColumn]);
 
-  const handleLoadState = useCallback(async (state: SaveState) => {
+  const handleLoadState = useCallback(async (state: SaveState, versionId?: string) => {
     if (!sessionId) return;
     
     setIsLoading(true);
@@ -244,11 +328,14 @@ export default function Home() {
       setCurrentColumn(state.currentColumn);
       setSelectedPattern(state.selectedPattern);
       setExtrema(state.extrema);
+      setEvents(state.events);
       setData(state.data);
       setColumns(state.columns);
-      setShowUploadForm(false);
-      setShowStickFigure(false);
-      setShowMeanTrendsAnalyzer(false);
+      if (state.frequency) setCurrentFrequency(state.frequency);
+      if (state.chartHeight) setChartHeight(state.chartHeight);
+      if (state.topChartHeight) setTopChartHeight(state.topChartHeight);
+      if (state.bottomChartHeight) setBottomChartHeight(state.bottomChartHeight);
+      setActiveVersionId(versionId);
       
       await restoreState(sessionId, state.extrema);
       
@@ -307,6 +394,7 @@ export default function Home() {
               columns={columns}
               onLoadState={handleLoadState}
               disabled={isLoading}
+              activeVersionId={activeVersionId}
             />
             {sessionId && (
               <button
@@ -321,7 +409,7 @@ export default function Home() {
               <>
                 <div className="w-px h-6 bg-white/10" />
                 <button
-                  onClick={() => setShowMainTrend(!showMainTrend)}
+                  onClick={() => { setShowMainTrend(prev => { if (!prev) { setShowReferenceAnalysis(false); setShowMeanTrendsAnalyzer(false); setShowStickFigure(false); } return !prev; }); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
                     showMainTrend
                       ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white'
@@ -333,8 +421,10 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => {
-                    setShowReferenceAnalysis(!showReferenceAnalysis);
-                    if (!showReferenceAnalysis) setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                    setShowReferenceAnalysis(prev => {
+                      if (!prev) { setShowMainTrend(false); setShowMeanTrendsAnalyzer(false); setShowStickFigure(false); setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }
+                      return !prev;
+                    });
                   }}
                   disabled={isLoading || events.length < 1}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
@@ -348,8 +438,10 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => {
-                    setShowMeanTrendsAnalyzer(!showMeanTrendsAnalyzer);
-                    if (!showMeanTrendsAnalyzer) setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                    setShowMeanTrendsAnalyzer(prev => {
+                      if (!prev) { setShowMainTrend(false); setShowReferenceAnalysis(false); setShowStickFigure(false); setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }
+                      return !prev;
+                    });
                   }}
                   disabled={isLoading || events.length < 2}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
@@ -431,6 +523,8 @@ export default function Home() {
               onClose={() => setShowMainTrend(false)}
               sessionId={sessionId}
               frequency={currentFrequency}
+              chartHeight={chartHeight}
+              onChartHeightChange={setChartHeight}
             />}
 
             {showReferenceAnalysis && sessionId && data.length > 0 && (
@@ -460,6 +554,10 @@ export default function Home() {
                   onPatternChange={handlePatternSelect}
                   currentPattern={selectedPattern}
                   frequency={currentFrequency}
+                  topChartHeight={topChartHeight}
+                  bottomChartHeight={bottomChartHeight}
+                  onTopChartHeightChange={setTopChartHeight}
+                  onBottomChartHeightChange={setBottomChartHeight}
                 />
               </div>
             )}

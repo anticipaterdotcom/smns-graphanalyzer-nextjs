@@ -54,6 +54,10 @@ interface ReferenceAnalysisProps {
   onPatternChange: (pattern: number[]) => void;
   currentPattern: number[];
   frequency: number;
+  topChartHeight?: number;
+  bottomChartHeight?: number;
+  onTopChartHeightChange?: (height: number) => void;
+  onBottomChartHeightChange?: (height: number) => void;
 }
 
 export default function ReferenceAnalysis({
@@ -77,6 +81,10 @@ export default function ReferenceAnalysis({
   onPatternChange,
   currentPattern,
   frequency: propFrequency,
+  topChartHeight: propTopChartHeight,
+  bottomChartHeight: propBottomChartHeight,
+  onTopChartHeightChange,
+  onBottomChartHeightChange,
 }: ReferenceAnalysisProps) {
   const [topColumn, setTopColumn] = useState(analyzedColumn);
   const [bottomColumn, setBottomColumn] = useState(0);
@@ -84,6 +92,8 @@ export default function ReferenceAnalysis({
   const [bottomData, setBottomData] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
+  const topChartRef = useRef<HTMLDivElement>(null);
+  const bottomChartRef = useRef<HTMLDivElement>(null);
   
   const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>('low-high-low');
   const [refPatternEvents, setRefPatternEvents] = useState<RefPatternEvent[]>([]);
@@ -99,6 +109,156 @@ export default function ReferenceAnalysis({
   const [bottomPatternEvents, setBottomPatternEvents] = useState<RefPatternEvent[]>([]);
   const [showTopAreas, setShowTopAreas] = useState(true);
   const [showBottomAreas, setShowBottomAreas] = useState(false);
+  const [topYZoom, setTopYZoom] = useState(1);
+  const [bottomYZoom, setBottomYZoom] = useState(1);
+  const [topYCenter, setTopYCenter] = useState<number | null>(null);
+  const [bottomYCenter, setBottomYCenter] = useState<number | null>(null);
+  const [topXZoom, setTopXZoom] = useState(1);
+  const [bottomXZoom, setBottomXZoom] = useState(1);
+  const [topXCenter, setTopXCenter] = useState<number | null>(null);
+  const [bottomXCenter, setBottomXCenter] = useState<number | null>(null);
+  const [topIsDragging, setTopIsDragging] = useState(false);
+  const [bottomIsDragging, setBottomIsDragging] = useState(false);
+  const [topDragStart, setTopDragStart] = useState<{x: number, y: number, xCenter: number, yCenter: number} | null>(null);
+  const [bottomDragStart, setBottomDragStart] = useState<{x: number, y: number, xCenter: number, yCenter: number} | null>(null);
+  const [topChartHeight, setTopChartHeight] = useState(propTopChartHeight || 200);
+  const [bottomChartHeight, setBottomChartHeight] = useState(propBottomChartHeight || 200);
+  
+  useEffect(() => {
+    if (propTopChartHeight !== undefined) {
+      setTopChartHeight(propTopChartHeight);
+    }
+  }, [propTopChartHeight]);
+  
+  useEffect(() => {
+    if (propBottomChartHeight !== undefined) {
+      setBottomChartHeight(propBottomChartHeight);
+    }
+  }, [propBottomChartHeight]);
+  
+  useEffect(() => {
+    if (onTopChartHeightChange && topChartHeight !== propTopChartHeight) {
+      onTopChartHeightChange(topChartHeight);
+    }
+  }, [topChartHeight, onTopChartHeightChange, propTopChartHeight]);
+  
+  useEffect(() => {
+    if (onBottomChartHeightChange && bottomChartHeight !== propBottomChartHeight) {
+      onBottomChartHeightChange(bottomChartHeight);
+    }
+  }, [bottomChartHeight, onBottomChartHeightChange, propBottomChartHeight]);
+  const topYDomainRef = useRef<[number, number]>([0, 10]);
+  const bottomYDomainRef = useRef<[number, number]>([0, 10]);
+  const topXDomainRef = useRef<{min: number, max: number}>({min: 1, max: 100});
+  const bottomXDomainRef = useRef<{min: number, max: number}>({min: 1, max: 100});
+
+  useEffect(() => {
+    const topElement = topChartRef.current;
+    if (!topElement) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const delta = e.deltaY;
+        const zoomFactor = delta > 0 ? 0.9 : 1.1;
+        const rect = topElement.getBoundingClientRect();
+        
+        // Calculate mouse position relative to chart (0 to 1)
+        const mouseXRatio = (e.clientX - rect.left) / rect.width;
+        const mouseYRatio = (e.clientY - rect.top) / rect.height;
+        
+        // Get current domain values
+        const currentYDomain = topYDomainRef.current;
+        const currentXDomain = topXDomainRef.current;
+        
+        // Calculate the data value at mouse position BEFORE zoom
+        const mouseYValue = currentYDomain[0] + (currentYDomain[1] - currentYDomain[0]) * (1 - mouseYRatio);
+        const mouseXValue = currentXDomain.min + (currentXDomain.max - currentXDomain.min) * mouseXRatio;
+        
+        // Calculate current center
+        const currentYCenter = (currentYDomain[0] + currentYDomain[1]) / 2;
+        const currentXCenter = (currentXDomain.min + currentXDomain.max) / 2;
+        
+        // Calculate new center to keep mouse point fixed
+        const newYCenter = mouseYValue + (currentYCenter - mouseYValue) / zoomFactor;
+        const newXCenter = mouseXValue + (currentXCenter - mouseXValue) / zoomFactor;
+        
+        // Set new centers
+        setTopYCenter(newYCenter);
+        setTopXCenter(newXCenter);
+        
+        setTopYZoom(prev => {
+          const newZoom = prev * zoomFactor;
+          return Math.max(0.1, Math.min(10, newZoom));
+        });
+        setTopXZoom(prev => {
+          const newZoom = prev * zoomFactor;
+          return Math.max(0.1, Math.min(10, newZoom));
+        });
+      }
+    };
+
+    topElement.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => {
+      topElement.removeEventListener('wheel', handleWheel, { capture: true } as EventListenerOptions);
+    };
+  }, []);
+
+  useEffect(() => {
+    const bottomElement = bottomChartRef.current;
+    if (!bottomElement) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const delta = e.deltaY;
+        const zoomFactor = delta > 0 ? 0.9 : 1.1;
+        const rect = bottomElement.getBoundingClientRect();
+        
+        // Calculate mouse position relative to chart (0 to 1)
+        const mouseXRatio = (e.clientX - rect.left) / rect.width;
+        const mouseYRatio = (e.clientY - rect.top) / rect.height;
+        
+        // Get current domain values
+        const currentYDomain = bottomYDomainRef.current;
+        const currentXDomain = bottomXDomainRef.current;
+        
+        // Calculate the data value at mouse position BEFORE zoom
+        const mouseYValue = currentYDomain[0] + (currentYDomain[1] - currentYDomain[0]) * (1 - mouseYRatio);
+        const mouseXValue = currentXDomain.min + (currentXDomain.max - currentXDomain.min) * mouseXRatio;
+        
+        // Calculate current center
+        const currentYCenter = (currentYDomain[0] + currentYDomain[1]) / 2;
+        const currentXCenter = (currentXDomain.min + currentXDomain.max) / 2;
+        
+        // Calculate new center to keep mouse point fixed
+        const newYCenter = mouseYValue + (currentYCenter - mouseYValue) / zoomFactor;
+        const newXCenter = mouseXValue + (currentXCenter - mouseXValue) / zoomFactor;
+        
+        // Set new centers
+        setBottomYCenter(newYCenter);
+        setBottomXCenter(newXCenter);
+        
+        setBottomYZoom(prev => {
+          const newZoom = prev * zoomFactor;
+          return Math.max(0.1, Math.min(10, newZoom));
+        });
+        setBottomXZoom(prev => {
+          const newZoom = prev * zoomFactor;
+          return Math.max(0.1, Math.min(10, newZoom));
+        });
+      }
+    };
+
+    bottomElement.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => {
+      bottomElement.removeEventListener('wheel', handleWheel, { capture: true } as EventListenerOptions);
+    };
+  }, []);
 
   const findExtremaLocal = useCallback((data: number[], minDistance: number = 10): Extremum[] => {
     if (data.length < 3) return [];
@@ -195,35 +355,73 @@ export default function ReferenceAnalysis({
 
   const getXAxisConfig = useMemo(() => {
     const len = Math.max(topData.length, bottomData.length);
-    if (len === 0) return { ticks: [1], max: 100 };
+    const dataCenter = len / 2;
+    const topCenter = topXCenter ?? dataCenter;
+    const bottomCenter = bottomXCenter ?? dataCenter;
+    
+    const topRange = len / topXZoom;
+    const topMin = Math.max(1, topCenter - topRange / 2);
+    const topMax = Math.min(len, topCenter + topRange / 2);
+    
+    const bottomRange = len / bottomXZoom;
+    const bottomMin = Math.max(1, bottomCenter - bottomRange / 2);
+    const bottomMax = Math.min(len, bottomCenter + bottomRange / 2);
+    
+    const visibleRange = Math.max(topMax - topMin, bottomMax - bottomMin);
     let step: number;
-    if (len <= 50) step = 5;
-    else if (len <= 100) step = 10;
-    else if (len <= 200) step = 20;
-    else if (len <= 500) step = 50;
-    else if (len <= 1000) step = 100;
-    else if (len <= 2000) step = 200;
+    if (visibleRange <= 50) step = 5;
+    else if (visibleRange <= 100) step = 10;
+    else if (visibleRange <= 200) step = 20;
+    else if (visibleRange <= 500) step = 50;
+    else if (visibleRange <= 1000) step = 100;
+    else if (visibleRange <= 2000) step = 200;
     else step = 500;
     
-    const ticks: number[] = [1];
-    const max = Math.ceil(len / step) * step;
-    for (let i = step; i <= max; i += step) {
+    const ticks: number[] = [];
+    const startTick = Math.ceil(Math.min(topMin, bottomMin) / step) * step;
+    const endTick = Math.max(topMax, bottomMax);
+    for (let i = startTick; i <= endTick; i += step) {
       ticks.push(i);
     }
-    return { ticks, max };
-  }, [topData.length, bottomData.length]);
+    
+    topXDomainRef.current = { min: topMin, max: topMax };
+    bottomXDomainRef.current = { min: bottomMin, max: bottomMax };
+    
+    return { 
+      ticks, 
+      max: len,
+      topMin, 
+      topMax,
+      bottomMin,
+      bottomMax
+    };
+  }, [topData.length, bottomData.length, topXZoom, topXCenter, bottomXZoom, bottomXCenter]);
 
-  const sharedYDomain = useMemo((): [number, number] => {
-    const allValues = [...topData, ...bottomData].filter(v => v !== 0);
-    if (allValues.length === 0) return [0, 10];
-    const maxVal = Math.max(...allValues);
-    const minVal = Math.min(...allValues);
-    let yMax: number;
-    if (maxVal < 5) yMax = 5;
-    else yMax = Math.ceil(maxVal / 10) * 10;
-    const yMin = Math.floor(minVal / 10) * 10;
-    return [yMin, yMax];
-  }, [topData, bottomData]);
+  const topYDomain = useMemo((): [number, number] => {
+    const values = topData.filter(v => v !== 0);
+    if (values.length === 0) return [0, 10];
+    const maxVal = Math.max(...values);
+    const minVal = Math.min(...values);
+    const dataCenter = (maxVal + minVal) / 2;
+    const center = topYCenter ?? dataCenter;
+    const range = (maxVal - minVal) / topYZoom;
+    const domain: [number, number] = [center - range / 2, center + range / 2];
+    topYDomainRef.current = domain;
+    return domain;
+  }, [topData, topYZoom, topYCenter]);
+
+  const bottomYDomain = useMemo((): [number, number] => {
+    const values = bottomData.filter(v => v !== 0);
+    if (values.length === 0) return [0, 10];
+    const maxVal = Math.max(...values);
+    const minVal = Math.min(...values);
+    const dataCenter = (maxVal + minVal) / 2;
+    const center = bottomYCenter ?? dataCenter;
+    const range = (maxVal - minVal) / bottomYZoom;
+    const domain: [number, number] = [center - range / 2, center + range / 2];
+    bottomYDomainRef.current = domain;
+    return domain;
+  }, [bottomData, bottomYZoom, bottomYCenter]);
 
   const columnOptions = Array.from({ length: totalColumns }, (_, i) => i);
 
@@ -259,7 +457,7 @@ export default function ReferenceAnalysis({
     setTopExtrema(prev => {
       const closest = prev.reduce<Extremum | null>((best, e) =>
         !best || Math.abs(e.index - targetIndex) < Math.abs(best.index - targetIndex) ? e : best, null);
-      if (closest && Math.abs(closest.index - targetIndex) < 15) {
+      if (closest && Math.abs(closest.index - targetIndex) <= 50) {
         return prev.filter(e => e.index !== closest.index);
       }
       return prev;
@@ -306,7 +504,7 @@ export default function ReferenceAnalysis({
     setBottomExtrema(prev => {
       const closest = prev.reduce<Extremum | null>((best, e) =>
         !best || Math.abs(e.index - targetIndex) < Math.abs(best.index - targetIndex) ? e : best, null);
-      if (closest && Math.abs(closest.index - targetIndex) < 15) {
+      if (closest && Math.abs(closest.index - targetIndex) <= 50) {
         return prev.filter(e => e.index !== closest.index);
       }
       return prev;
@@ -586,19 +784,94 @@ export default function ReferenceAnalysis({
 
       <div ref={chartRef} className="space-y-4">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-sm font-medium text-neutral-300">Top Chart:</p>
-            <select
-              value={topColumn}
-              onChange={(e) => setTopColumn(Number(e.target.value))}
-              className="px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
-            >
-              {columnOptions.map((col) => (
-                <option key={col} value={col}>Column {col + 1}</option>
-              ))}
-            </select>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-neutral-300">Top Chart:</p>
+              <select
+                value={topColumn}
+                onChange={(e) => setTopColumn(Number(e.target.value))}
+                className="px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+              >
+                {columnOptions.map((col) => (
+                  <option key={col} value={col}>Column {col + 1}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setTopChartHeight(prev => Math.min(600, prev + 50))}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Increase Chart Size"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setTopChartHeight(prev => Math.max(100, prev - 50))}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Decrease Chart Size"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className={`h-[200px] rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : ''}`}>
+          <div 
+            ref={topChartRef}
+            style={{ height: `${topChartHeight}px` }}
+            className={`rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : topIsDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            onWheel={(e) => {
+              if (e.metaKey || e.ctrlKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                const delta = e.deltaY;
+                const [yMin, yMax] = topYDomain;
+                const { topMin, topMax } = getXAxisConfig;
+                setTopYCenter((yMin + yMax) / 2);
+                setTopXCenter((topMin + topMax) / 2);
+                setTopYZoom(prev => {
+                  const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
+                  return Math.max(0.1, Math.min(10, newZoom));
+                });
+                setTopXZoom(prev => {
+                  const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
+                  return Math.max(0.1, Math.min(10, newZoom));
+                });
+              }
+            }}
+            onMouseDown={(e) => {
+              if (editMode) return;
+              const [yMin, yMax] = topYDomain;
+              const { topMin, topMax } = getXAxisConfig;
+              setTopIsDragging(true);
+              setTopDragStart({
+                x: e.clientX,
+                y: e.clientY,
+                xCenter: (topMin + topMax) / 2,
+                yCenter: (yMin + yMax) / 2
+              });
+            }}
+            onMouseMove={(e) => {
+              if (!topIsDragging || !topDragStart || editMode) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const deltaY = e.clientY - topDragStart.y;
+              const deltaX = e.clientX - topDragStart.x;
+              const [yMin, yMax] = topYDomain;
+              const { topMin, topMax } = getXAxisConfig;
+              const yRange = yMax - yMin;
+              const xRange = topMax - topMin;
+              const yShift = -(deltaY / rect.height) * yRange;
+              const xShift = -(deltaX / rect.width) * xRange;
+              setTopYCenter(topDragStart.yCenter + yShift);
+              setTopXCenter(topDragStart.xCenter + xShift);
+            }}
+            onMouseUp={() => {
+              setTopIsDragging(false);
+              setTopDragStart(null);
+            }}
+            onMouseLeave={() => {
+              setTopIsDragging(false);
+              setTopDragStart(null);
+            }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={topChartData} onClick={handleTopChartClick}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
@@ -607,13 +880,15 @@ export default function ReferenceAnalysis({
                   type="number"
                   stroke="#64748b" 
                   fontSize={10}
-                  domain={[1, getXAxisConfig.max]}
+                  domain={[getXAxisConfig.topMin, getXAxisConfig.topMax]}
                   ticks={getXAxisConfig.ticks}
+                  allowDataOverflow={true}
                 />
                 <YAxis 
                   stroke="#64748b" 
                   fontSize={10} 
-                  domain={sharedYDomain}
+                  domain={topYDomain}
+                  allowDataOverflow={true}
                 />
                 <Tooltip
                   contentStyle={{
@@ -812,25 +1087,16 @@ export default function ReferenceAnalysis({
             <div className="bg-neutral-800/50 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-blue-400">Maxima ({refMaxima.length})</span>
-                {editMode && editAction === 'add-max' && (
-                  <span className="text-xs text-orange-400">Click chart to add</span>
-                )}
               </div>
               <div className="max-h-24 overflow-y-auto space-y-1">
                 {refMaxima.map((ext: Extremum, i: number) => (
                   <div
                     key={`max-${ext.index}-${i}`}
-                    className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
+                    className={`flex items-center justify-between text-xs px-2 py-1 rounded cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
                     onMouseEnter={() => setLocalHighlightIndex(ext.index)}
                     onMouseLeave={() => setLocalHighlightIndex(null)}
                   >
                     <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
-                    <button
-                      onClick={() => removeTopExtremum(ext.index)}
-                      className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
                   </div>
                 ))}
                 {refMaxima.length === 0 && <span className="text-xs text-neutral-500">No maxima</span>}
@@ -839,25 +1105,16 @@ export default function ReferenceAnalysis({
             <div className="bg-neutral-800/50 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-emerald-400">Minima ({refMinima.length})</span>
-                {editMode && editAction === 'add-min' && (
-                  <span className="text-xs text-orange-400">Click chart to add</span>
-                )}
               </div>
               <div className="max-h-24 overflow-y-auto space-y-1">
                 {refMinima.map((ext: Extremum, i: number) => (
                   <div
                     key={`min-${ext.index}-${i}`}
-                    className={`flex items-center justify-between text-xs px-2 py-1 rounded group cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
+                    className={`flex items-center justify-between text-xs px-2 py-1 rounded cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
                     onMouseEnter={() => setLocalHighlightIndex(ext.index)}
                     onMouseLeave={() => setLocalHighlightIndex(null)}
                   >
                     <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
-                    <button
-                      onClick={() => removeTopExtremum(ext.index)}
-                      className="text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-300 transition-opacity"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
                   </div>
                 ))}
                 {refMinima.length === 0 && <span className="text-xs text-neutral-500">No minima</span>}
@@ -867,20 +1124,95 @@ export default function ReferenceAnalysis({
         </div>
 
         <div>
-          <div className="flex items-center gap-2 mb-2 mt-4">
-            <p className="text-sm font-medium text-neutral-300">Bottom Chart:</p>
-            <select
-              value={bottomColumn}
-              onChange={(e) => setBottomColumn(Number(e.target.value))}
-              className="px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
-            >
-              {columnOptions.map((col) => (
-                <option key={col} value={col}>Column {col + 1}</option>
-              ))}
-            </select>
-            {isLoading && <span className="text-neutral-500 text-xs">Loading...</span>}
+          <div className="flex items-center justify-between mb-2 mt-4">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-neutral-300">Bottom Chart:</p>
+              <select
+                value={bottomColumn}
+                onChange={(e) => setBottomColumn(Number(e.target.value))}
+                className="px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+              >
+                {columnOptions.filter(col => col !== topColumn).map((col) => (
+                  <option key={col} value={col}>Column {col + 1}</option>
+                ))}
+              </select>
+              {isLoading && <span className="text-neutral-500 text-xs">Loading...</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setBottomChartHeight(prev => Math.min(600, prev + 50))}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Increase Chart Size"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setBottomChartHeight(prev => Math.max(100, prev - 50))}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Decrease Chart Size"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className={`h-[200px] rounded-xl bg-neutral-900/50 p-4 ${bottomEditMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : ''}`}>
+          <div 
+            ref={bottomChartRef}
+            style={{ height: `${bottomChartHeight}px` }}
+            className={`rounded-xl bg-neutral-900/50 p-4 ${bottomEditMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : bottomIsDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            onWheel={(e) => {
+              if (e.metaKey || e.ctrlKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                const delta = e.deltaY;
+                const [yMin, yMax] = bottomYDomain;
+                const { bottomMin, bottomMax } = getXAxisConfig;
+                setBottomYCenter((yMin + yMax) / 2);
+                setBottomXCenter((bottomMin + bottomMax) / 2);
+                setBottomYZoom(prev => {
+                  const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
+                  return Math.max(0.1, Math.min(10, newZoom));
+                });
+                setBottomXZoom(prev => {
+                  const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
+                  return Math.max(0.1, Math.min(10, newZoom));
+                });
+              }
+            }}
+            onMouseDown={(e) => {
+              if (bottomEditMode) return;
+              const [yMin, yMax] = bottomYDomain;
+              const { bottomMin, bottomMax } = getXAxisConfig;
+              setBottomIsDragging(true);
+              setBottomDragStart({
+                x: e.clientX,
+                y: e.clientY,
+                xCenter: (bottomMin + bottomMax) / 2,
+                yCenter: (yMin + yMax) / 2
+              });
+            }}
+            onMouseMove={(e) => {
+              if (!bottomIsDragging || !bottomDragStart || bottomEditMode) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const deltaY = e.clientY - bottomDragStart.y;
+              const deltaX = e.clientX - bottomDragStart.x;
+              const [yMin, yMax] = bottomYDomain;
+              const { bottomMin, bottomMax } = getXAxisConfig;
+              const yRange = yMax - yMin;
+              const xRange = bottomMax - bottomMin;
+              const yShift = -(deltaY / rect.height) * yRange;
+              const xShift = -(deltaX / rect.width) * xRange;
+              setBottomYCenter(bottomDragStart.yCenter + yShift);
+              setBottomXCenter(bottomDragStart.xCenter + xShift);
+            }}
+            onMouseUp={() => {
+              setBottomIsDragging(false);
+              setBottomDragStart(null);
+            }}
+            onMouseLeave={() => {
+              setBottomIsDragging(false);
+              setBottomDragStart(null);
+            }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={bottomChartData} onClick={handleBottomChartClick}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
@@ -889,13 +1221,15 @@ export default function ReferenceAnalysis({
                   type="number"
                   stroke="#64748b" 
                   fontSize={10}
-                  domain={[1, getXAxisConfig.max]}
+                  domain={[getXAxisConfig.bottomMin, getXAxisConfig.bottomMax]}
                   ticks={getXAxisConfig.ticks}
+                  allowDataOverflow={true}
                 />
                 <YAxis 
                   stroke="#64748b" 
                   fontSize={10} 
-                  domain={sharedYDomain}
+                  domain={bottomYDomain}
+                  allowDataOverflow={true}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1035,7 +1369,12 @@ export default function ReferenceAnalysis({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-neutral-800/50 rounded-lg p-3">
-                <span className="text-xs font-medium text-blue-400 mb-2 block">Maxima ({bottomMaxima.length})</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-blue-400">Maxima ({bottomMaxima.length})</span>
+                  {bottomMaxima.length > 0 && (
+                    <button onClick={() => setBottomExtrema(prev => prev.filter(e => e.type !== 1))} className="text-xs text-red-400 hover:text-red-300">Clear</button>
+                  )}
+                </div>
                 <div className="max-h-24 overflow-y-auto space-y-1">
                   {bottomMaxima.map((ext, i) => (
                     <div
@@ -1057,7 +1396,12 @@ export default function ReferenceAnalysis({
                 </div>
               </div>
               <div className="bg-neutral-800/50 rounded-lg p-3">
-                <span className="text-xs font-medium text-emerald-400 mb-2 block">Minima ({bottomMinima.length})</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-emerald-400">Minima ({bottomMinima.length})</span>
+                  {bottomMinima.length > 0 && (
+                    <button onClick={() => setBottomExtrema(prev => prev.filter(e => e.type !== 0))} className="text-xs text-red-400 hover:text-red-300">Clear</button>
+                  )}
+                </div>
                 <div className="max-h-24 overflow-y-auto space-y-1">
                   {bottomMinima.map((ext, i) => (
                     <div

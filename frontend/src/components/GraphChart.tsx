@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback, useRef, useState } from 'react';
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import { Image, Plus, Minus, MousePointer, X } from 'lucide-react';
 import {
   LineChart,
@@ -38,6 +38,8 @@ interface GraphChartProps {
   onClose?: () => void;
   sessionId?: string;
   frequency?: number;
+  chartHeight?: number;
+  onChartHeightChange?: (height: number) => void;
 }
 
 export default function GraphChart({
@@ -63,10 +65,33 @@ export default function GraphChart({
   onClose,
   sessionId,
   frequency = 250,
+  chartHeight: propChartHeight,
+  onChartHeightChange,
 }: GraphChartProps) {
   const isHighLowHigh = selectedPattern[1] === 0;
   const chartRef = useRef<HTMLDivElement>(null);
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
+  const [yZoom, setYZoom] = useState(1);
+  const [yCenter, setYCenter] = useState<number | null>(null);
+  const [xZoom, setXZoom] = useState(1);
+  const [xCenter, setXCenter] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{x: number, y: number, xCenter: number, yCenter: number} | null>(null);
+  const [chartHeight, setChartHeight] = useState(propChartHeight || 400);
+  
+  useEffect(() => {
+    if (propChartHeight !== undefined) {
+      setChartHeight(propChartHeight);
+    }
+  }, [propChartHeight]);
+  
+  useEffect(() => {
+    if (onChartHeightChange && chartHeight !== propChartHeight) {
+      onChartHeightChange(chartHeight);
+    }
+  }, [chartHeight, onChartHeightChange, propChartHeight]);
+  const yDomainRef = useRef<[number, number]>([0, 10]);
+  const xDomainRef = useRef<{min: number, max: number}>({min: 1, max: 100});
 
   const chartData = useMemo(() => {
     return data.map((value, index) => ({
@@ -77,6 +102,63 @@ export default function GraphChart({
 
   const maxima = useMemo(() => extrema.filter((e) => e.type === 1), [extrema]);
   const minima = useMemo(() => extrema.filter((e) => e.type === 0), [extrema]);
+
+  useEffect(() => {
+    const chartElement = chartRef.current;
+    if (!chartElement) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const delta = e.deltaY;
+        const zoomFactor = delta > 0 ? 0.9 : 1.1;
+        const rect = chartElement.getBoundingClientRect();
+        
+        // Calculate mouse position relative to chart (0 to 1)
+        const mouseXRatio = (e.clientX - rect.left) / rect.width;
+        const mouseYRatio = (e.clientY - rect.top) / rect.height;
+        
+        // Get current domain values
+        const currentYDomain = yDomainRef.current;
+        const currentXDomain = xDomainRef.current;
+        
+        // Calculate the data value at mouse position BEFORE zoom
+        const mouseYValue = currentYDomain[0] + (currentYDomain[1] - currentYDomain[0]) * (1 - mouseYRatio);
+        const mouseXValue = currentXDomain.min + (currentXDomain.max - currentXDomain.min) * mouseXRatio;
+        
+        // Calculate current center
+        const currentYCenter = (currentYDomain[0] + currentYDomain[1]) / 2;
+        const currentXCenter = (currentXDomain.min + currentXDomain.max) / 2;
+        
+        // Calculate new center to keep mouse point fixed
+        // The mouse point should stay at the same screen position after zoom
+        const newYCenter = mouseYValue + (currentYCenter - mouseYValue) / zoomFactor;
+        const newXCenter = mouseXValue + (currentXCenter - mouseXValue) / zoomFactor;
+        
+        // Set new centers
+        setYCenter(newYCenter);
+        setXCenter(newXCenter);
+        
+        // Update zoom for both axes
+        setYZoom(prev => {
+          const newZoom = prev * zoomFactor;
+          return Math.max(0.1, Math.min(10, newZoom));
+        });
+        setXZoom(prev => {
+          const newZoom = prev * zoomFactor;
+          return Math.max(0.1, Math.min(10, newZoom));
+        });
+      }
+    };
+
+    // Add listener in capture phase to catch event before it bubbles
+    chartElement.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => {
+      chartElement.removeEventListener('wheel', handleWheel, { capture: true } as EventListenerOptions);
+    };
+  }, []);
 
   const handleClick = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,33 +207,45 @@ export default function GraphChart({
 
   const getXAxisConfig = useMemo(() => {
     const len = data.length;
+    const dataCenter = len / 2;
+    const center = xCenter ?? dataCenter;
+    const range = len / xZoom;
+    const xMin = Math.max(1, center - range / 2);
+    const xMax = Math.min(len, center + range / 2);
+    
+    const visibleRange = xMax - xMin;
     let step: number;
-    if (len <= 50) step = 5;
-    else if (len <= 100) step = 10;
-    else if (len <= 200) step = 20;
-    else if (len <= 500) step = 50;
-    else if (len <= 1000) step = 100;
-    else if (len <= 2000) step = 200;
+    if (visibleRange <= 50) step = 5;
+    else if (visibleRange <= 100) step = 10;
+    else if (visibleRange <= 200) step = 20;
+    else if (visibleRange <= 500) step = 50;
+    else if (visibleRange <= 1000) step = 100;
+    else if (visibleRange <= 2000) step = 200;
     else step = 500;
     
-    const ticks: number[] = [1];
-    const max = Math.ceil(len / step) * step;
-    for (let i = step; i <= max; i += step) {
+    const ticks: number[] = [];
+    const startTick = Math.ceil(xMin / step) * step;
+    for (let i = startTick; i <= xMax; i += step) {
       ticks.push(i);
     }
-    return { ticks, max };
-  }, [data.length]);
+    const config = { ticks, min: xMin, max: xMax };
+    xDomainRef.current = { min: xMin, max: xMax };
+    return config;
+  }, [data.length, xZoom, xCenter]);
 
   const getYAxisDomain = useMemo((): [number, number] => {
     if (data.length === 0) return [0, 10];
     const maxVal = Math.max(...data);
     const minVal = Math.min(...data);
-    let yMax: number;
-    if (maxVal < 5) yMax = 5;
-    else yMax = Math.ceil(maxVal / 10) * 10;
-    const yMin = Math.floor(minVal / 10) * 10;
-    return [yMin, yMax];
-  }, [data]);
+    const dataCenter = (maxVal + minVal) / 2;
+    const center = yCenter ?? dataCenter;
+    const range = (maxVal - minVal) / yZoom;
+    const yMax = center + range / 2;
+    const yMin = center - range / 2;
+    const domain: [number, number] = [yMin, yMax];
+    yDomainRef.current = domain;
+    return domain;
+  }, [data, yZoom, yCenter]);
 
   const buildCSV = useCallback(() => {
     if (events.length === 0) return '';
@@ -293,6 +387,22 @@ export default function GraphChart({
             <span className="w-3 h-3 rounded-full bg-emerald-500" />
             Minima ({minima.length})
           </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setChartHeight(prev => Math.min(800, prev + 50))}
+              className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+              title="Increase Chart Size"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setChartHeight(prev => Math.max(200, prev - 50))}
+              className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+              title="Decrease Chart Size"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+          </div>
           {onClose && (
             <button
               onClick={onClose}
@@ -304,7 +414,67 @@ export default function GraphChart({
         </div>
       </div>
 
-      <div ref={chartRef} className={`h-[400px] rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : ''}`}>
+      <div 
+        ref={chartRef} 
+        style={{ height: `${chartHeight}px` }}
+        className={`rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        onWheel={(e) => {
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            const delta = e.deltaY;
+            const [yMin, yMax] = getYAxisDomain;
+            const { min: xMin, max: xMax } = getXAxisConfig;
+            setYCenter((yMin + yMax) / 2);
+            setXCenter((xMin + xMax) / 2);
+            setYZoom(prev => {
+              const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
+              return Math.max(0.1, Math.min(10, newZoom));
+            });
+            setXZoom(prev => {
+              const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
+              return Math.max(0.1, Math.min(10, newZoom));
+            });
+          }
+        }}
+        onMouseDown={(e) => {
+          if (editMode) return;
+          const rect = chartRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const [yMin, yMax] = getYAxisDomain;
+          const { min: xMin, max: xMax } = getXAxisConfig;
+          setIsDragging(true);
+          setDragStart({
+            x: e.clientX,
+            y: e.clientY,
+            xCenter: (xMin + xMax) / 2,
+            yCenter: (yMin + yMax) / 2
+          });
+        }}
+        onMouseMove={(e) => {
+          if (!isDragging || !dragStart || editMode) return;
+          const rect = chartRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const deltaY = e.clientY - dragStart.y;
+          const deltaX = e.clientX - dragStart.x;
+          const [yMin, yMax] = getYAxisDomain;
+          const { min: xMin, max: xMax } = getXAxisConfig;
+          const yRange = yMax - yMin;
+          const xRange = xMax - xMin;
+          const yShift = -(deltaY / rect.height) * yRange;
+          const xShift = -(deltaX / rect.width) * xRange;
+          setYCenter(dragStart.yCenter + yShift);
+          setXCenter(dragStart.xCenter + xShift);
+        }}
+        onMouseUp={() => {
+          setIsDragging(false);
+          setDragStart(null);
+        }}
+        onMouseLeave={() => {
+          setIsDragging(false);
+          setDragStart(null);
+        }}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={enhancedChartData} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
@@ -313,10 +483,16 @@ export default function GraphChart({
               type="number"
               stroke="#64748b"
               fontSize={12}
-              domain={[1, getXAxisConfig.max]}
+              domain={[getXAxisConfig.min, getXAxisConfig.max]}
               ticks={getXAxisConfig.ticks}
+              allowDataOverflow={true}
             />
-            <YAxis stroke="#64748b" fontSize={12} domain={getYAxisDomain} />
+            <YAxis 
+              stroke="#64748b" 
+              fontSize={12} 
+              domain={getYAxisDomain}
+              allowDataOverflow={true}
+            />
             <Tooltip
               contentStyle={{
                 backgroundColor: 'rgba(15, 23, 42, 0.95)',
