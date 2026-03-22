@@ -122,7 +122,7 @@ class TestPatternDetection:
                 'start_value', 'start_time', 'inflexion_value', 'inflexion_time',
                 'end_value', 'end_time', 'shift_start_to_inflexion',
                 'shift_inflexion_to_end', 'time_start_to_inflexion',
-                'time_inflexion_to_end', 'cycle_time', 'pattern',
+                'time_inflexion_to_end', 'cycle_time', 'pattern_type',
                 'start_index', 'end_index'
             ]
             for key in required_keys:

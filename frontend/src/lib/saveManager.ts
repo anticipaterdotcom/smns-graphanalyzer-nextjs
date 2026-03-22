@@ -11,6 +11,7 @@ export interface SaveState {
   events: PatternEvent[];
   data: number[];
   columns: number;
+  rawData?: number[][];
   frequency?: number;
   minDistance?: number;
   chartHeight?: number;

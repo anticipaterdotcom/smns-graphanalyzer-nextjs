@@ -235,8 +235,12 @@ export default function GraphChart({
 
   const getYAxisDomain = useMemo((): [number, number] => {
     if (data.length === 0) return [0, 10];
-    const maxVal = Math.max(...data);
-    const minVal = Math.min(...data);
+    let maxVal = -Infinity;
+    let minVal = Infinity;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] > maxVal) maxVal = data[i];
+      if (data[i] < minVal) minVal = data[i];
+    }
     const dataCenter = (maxVal + minVal) / 2;
     const center = yCenter ?? dataCenter;
     const range = (maxVal - minVal) / yZoom;
@@ -247,29 +251,6 @@ export default function GraphChart({
     return domain;
   }, [data, yZoom, yCenter]);
 
-  const buildCSV = useCallback(() => {
-    if (events.length === 0) return '';
-    const headers = [
-      'Cycle', 'Pattern Type',
-      'Start Value', 'Start Time (s)', 'Start Index',
-      'Inflexion Value', 'Inflexion Time (s)', 'Inflexion Index',
-      'End Value', 'End Time (s)', 'End Index',
-      'Shift Start-Inflexion', 'Shift Inflexion-End',
-      'Time Start-Inflexion (s)', 'Time Inflexion-End (s)',
-      'Cycle Time (s)', 'Intercycle Time (s)',
-    ];
-    const rows = events.map((evt, i) => [
-      i + 1, evt.pattern_type,
-      evt.start_value.toFixed(4), evt.start_time.toFixed(4), evt.start_index,
-      evt.inflexion_value.toFixed(4), evt.inflexion_time.toFixed(4), evt.inflexion_index,
-      evt.end_value.toFixed(4), evt.end_time.toFixed(4), evt.end_index,
-      evt.shift_start_to_inflexion.toFixed(4), evt.shift_inflexion_to_end.toFixed(4),
-      evt.time_start_to_inflexion.toFixed(4), evt.time_inflexion_to_end.toFixed(4),
-      evt.cycle_time.toFixed(4),
-      evt.intercycle_time !== null ? evt.intercycle_time.toFixed(4) : '',
-    ]);
-    return [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-  }, [events]);
 
   const [isExporting, setIsExporting] = useState(false);
 
@@ -323,7 +304,7 @@ export default function GraphChart({
     }
   }, [sessionId, selectedPattern, frequency]);
 
-  const exportImage = useCallback(async (format: 'png' | 'svg') => {
+  const exportImage = useCallback(async (format: 'jpg' | 'svg') => {
     if (!chartRef.current) return;
     const svgElement = chartRef.current.querySelector('svg');
     if (!svgElement) return;
@@ -418,25 +399,6 @@ export default function GraphChart({
         ref={chartRef} 
         style={{ height: `${chartHeight}px` }}
         className={`rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-        onWheel={(e) => {
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
-            e.stopPropagation();
-            const delta = e.deltaY;
-            const [yMin, yMax] = getYAxisDomain;
-            const { min: xMin, max: xMax } = getXAxisConfig;
-            setYCenter((yMin + yMax) / 2);
-            setXCenter((xMin + xMax) / 2);
-            setYZoom(prev => {
-              const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
-              return Math.max(0.1, Math.min(10, newZoom));
-            });
-            setXZoom(prev => {
-              const newZoom = delta > 0 ? prev * 0.9 : prev * 1.1;
-              return Math.max(0.1, Math.min(10, newZoom));
-            });
-          }
-        }}
         onMouseDown={(e) => {
           if (editMode) return;
           const rect = chartRef.current?.getBoundingClientRect();
@@ -756,7 +718,7 @@ export default function GraphChart({
         </p>
         <div className="flex gap-2">
           <button
-            onClick={() => exportImage('png')}
+            onClick={() => exportImage('jpg')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 border border-white/10 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
           >
             <Image className="w-4 h-4" />

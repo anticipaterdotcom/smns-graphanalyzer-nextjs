@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Play, Settings, AlertTriangle } from 'lucide-react';
 
 interface AnalysisControlsProps {
@@ -16,19 +16,6 @@ export default function AnalysisControls({ columns, onAnalyze, isLoading, hasExt
   const [frequency, setFrequency] = useState(250);
   const [showWarning, setShowWarning] = useState(false);
   const [pendingAnalysis, setPendingAnalysis] = useState<{column: number, minDistance: number, frequency: number} | null>(null);
-  const isFirstRender = useRef(true);
-
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    const timer = setTimeout(() => {
-      onAnalyze(column, minDistance, frequency);
-    }, 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [column, minDistance, frequency]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

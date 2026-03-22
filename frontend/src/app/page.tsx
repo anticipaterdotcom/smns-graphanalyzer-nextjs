@@ -5,9 +5,7 @@ import { RefreshCw, Film, Upload, TrendingUp, Layers, Settings } from 'lucide-re
 import FileUpload from '@/components/FileUpload';
 import AnalysisControls from '@/components/AnalysisControls';
 import GraphChart from '@/components/GraphChart';
-import PatternSelector from '@/components/PatternSelector';
 import MeanTrendsAnalyzer from '@/components/MeanTrendsAnalyzer';
-import ExtremaEditor from '@/components/ExtremaEditor';
 import StickFigurePlayer from '@/components/StickFigurePlayer';
 import ReferenceAnalysis from '@/components/ReferenceAnalysis';
 import SaveManager from '@/components/SaveManager';
@@ -20,6 +18,9 @@ import {
   removeExtremum,
   getStickFigureData,
   restoreState,
+  checkSession,
+  loadSavepoint,
+  getSavepoint,
   Extremum,
   PatternEvent,
   StickFigureData,
@@ -29,6 +30,7 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [columns, setColumns] = useState(0);
   const [data, setData] = useState<number[]>([]);
+  const [rawData, setRawData] = useState<number[][] | null>(null);
   const [extrema, setExtrema] = useState<Extremum[]>([]);
   const [events, setEvents] = useState<PatternEvent[]>([]);
   const [selectedPattern, setSelectedPattern] = useState<number[]>([0, 1, 0]);
@@ -73,39 +75,77 @@ export default function Home() {
     state.chartHeight = chartHeight;
     state.topChartHeight = topChartHeight;
     state.bottomChartHeight = bottomChartHeight;
+    if (rawData) state.rawData = rawData;
     addToVersionHistory(state);
-  }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns, currentFrequency, chartHeight, topChartHeight, bottomChartHeight]);
+  }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns, currentFrequency, chartHeight, topChartHeight, bottomChartHeight, rawData]);
 
   useEffect(() => {
-    const history = getVersionHistory();
-    if (history.length > 0) {
+    const restoreFromHistory = async () => {
+      const history = getVersionHistory();
+      if (history.length === 0) {
+        setShowUploadForm(true);
+        return;
+      }
       try {
         const latest = history[0];
-        if (latest.state.data && latest.state.data.length > 0) {
-          setSessionId(latest.state.sessionId);
-          setColumns(latest.state.columns);
-          setData(latest.state.data);
-          setExtrema(latest.state.extrema);
-          setEvents(latest.state.events);
-          setSelectedPattern(latest.state.selectedPattern);
-          setCurrentColumn(latest.state.currentColumn);
-          setCurrentFrequency(latest.state.frequency || 250);
-          if (latest.state.chartHeight) setChartHeight(latest.state.chartHeight);
-          if (latest.state.topChartHeight) setTopChartHeight(latest.state.topChartHeight);
-          if (latest.state.bottomChartHeight) setBottomChartHeight(latest.state.bottomChartHeight);
-          setActiveVersionId(latest.id);
-          setShowUploadForm(false);
-          setShowMainTrend(true);
+        if (!latest.state.data || latest.state.data.length === 0) {
+          setShowUploadForm(true);
+          return;
+        }
+        // Restore local UI state immediately
+        setColumns(latest.state.columns);
+        setData(latest.state.data);
+        setExtrema(latest.state.extrema);
+        setEvents(latest.state.events);
+        setSelectedPattern(latest.state.selectedPattern);
+        setCurrentColumn(latest.state.currentColumn);
+        setCurrentFrequency(latest.state.frequency || 250);
+        if (latest.state.chartHeight) setChartHeight(latest.state.chartHeight);
+        if (latest.state.topChartHeight) setTopChartHeight(latest.state.topChartHeight);
+        if (latest.state.bottomChartHeight) setBottomChartHeight(latest.state.bottomChartHeight);
+        setActiveVersionId(latest.id);
+        setShowUploadForm(false);
+        setShowMainTrend(true);
+
+        // Verify backend session still exists; if expired, re-create from saved raw data
+        const sid = latest.state.sessionId;
+        if (sid && await checkSession(sid)) {
+          setSessionId(sid);
+          if (latest.state.rawData) setRawData(latest.state.rawData);
+        } else if (latest.state.rawData) {
+          // Session expired but we have raw data -- re-create session on backend
+          try {
+            const result = await loadSavepoint(
+              latest.state.rawData,
+              latest.state.extrema,
+              latest.state.frequency || 100
+            );
+            const newSid = result.session_id;
+            setSessionId(newSid);
+            setRawData(latest.state.rawData);
+
+            // Restore extrema and re-fetch pattern events
+            await restoreState(newSid, latest.state.extrema);
+            const patternResult = await getPatternEvents(newSid, latest.state.selectedPattern);
+            setEvents(patternResult.events);
+          } catch (err) {
+            console.warn('Auto-recovery failed:', err);
+            setSessionId(null);
+            setError('Session expired and recovery failed. Please re-upload your CSV file.');
+            setShowUploadForm(true);
+          }
         } else {
+          // No raw data saved -- cannot recover
+          setSessionId(null);
+          setError('Session expired. Please re-upload your CSV file.');
           setShowUploadForm(true);
         }
       } catch (err) {
         console.error('Failed to restore session:', err);
         setShowUploadForm(true);
       }
-    } else {
-      setShowUploadForm(true);
-    }
+    };
+    restoreFromHistory();
   }, []);
 
   const handleFileUpload = useCallback(async (file: File, delimiter: string, trimZeros: boolean) => {
@@ -132,6 +172,14 @@ export default function Home() {
       setSelectedPattern(defaultPattern);
       const patternResult = await getPatternEvents(result.session_id, defaultPattern);
       setEvents(patternResult.events);
+
+      // Fetch full raw data for session recovery
+      try {
+        const savepoint = await getSavepoint(result.session_id);
+        setRawData(savepoint.raw_data);
+      } catch (e) {
+        console.warn('Failed to fetch raw data for savepoint');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -156,6 +204,14 @@ export default function Home() {
         setSelectedPattern(defaultPattern);
         const patternResult = await getPatternEvents(sessionId, defaultPattern);
         setEvents(patternResult.events);
+
+        // Fetch full raw data for session recovery
+        try {
+          const savepoint = await getSavepoint(sessionId);
+          setRawData(savepoint.raw_data);
+        } catch (e) {
+          console.warn('Failed to fetch raw data for savepoint');
+        }
 
         autoSave(`Analysis col ${column}`);
       } catch (err) {
@@ -213,7 +269,12 @@ export default function Home() {
         
         if (sessionId) {
           try {
-            await addExtremum(sessionId, index, type, epsilon);
+            // Push full extrema state to backend to keep in sync
+            const updatedExtrema = [...data.length > 0 ? (() => {
+              const filtered = extrema.filter(e => Math.abs(e.index - targetIndex) >= 5);
+              return [...filtered, newExt].sort((a, b) => a.index - b.index);
+            })() : extrema];
+            await restoreState(sessionId, updatedExtrema);
             if (selectedPattern.length > 0) {
               const patternResult = await getPatternEvents(sessionId, selectedPattern);
               setEvents(patternResult.events);
@@ -227,7 +288,7 @@ export default function Home() {
         setError(err instanceof Error ? err.message : 'Failed to add extremum');
       }
     },
-    [data, sessionId, selectedPattern, autoSave]
+    [data, extrema, sessionId, selectedPattern, autoSave]
   );
 
   const handleRemoveExtremum = useCallback(
@@ -256,7 +317,19 @@ export default function Home() {
         
         if (sessionId) {
           try {
-            await removeExtremum(sessionId, index);
+            // Compute what the new extrema list will be after removal
+            let updatedExtrema = extrema;
+            let closestExtremum: Extremum | null = null;
+            let minDist = Infinity;
+            extrema.forEach(e => {
+              const d = Math.abs(e.index - index);
+              if (d < minDist) { minDist = d; closestExtremum = e; }
+            });
+            if (closestExtremum && minDist <= 50) {
+              updatedExtrema = extrema.filter(e => e !== closestExtremum);
+            }
+            // Push full extrema state to backend to keep in sync
+            await restoreState(sessionId, updatedExtrema);
             if (selectedPattern.length > 0) {
               const patternResult = await getPatternEvents(sessionId, selectedPattern);
               setEvents(patternResult.events);
@@ -270,7 +343,7 @@ export default function Home() {
         setError(err instanceof Error ? err.message : 'Failed to remove extremum');
       }
     },
-    [data, sessionId, selectedPattern, autoSave]
+    [data, extrema, sessionId, selectedPattern, autoSave]
   );
 
   const handleChartClick = useCallback(
@@ -321,10 +394,9 @@ export default function Home() {
   }, [sessionId, currentColumn]);
 
   const handleLoadState = useCallback(async (state: SaveState, versionId?: string) => {
-    if (!sessionId) return;
-    
     setIsLoading(true);
     try {
+      // Restore UI state immediately
       setCurrentColumn(state.currentColumn);
       setSelectedPattern(state.selectedPattern);
       setExtrema(state.extrema);
@@ -335,11 +407,28 @@ export default function Home() {
       if (state.chartHeight) setChartHeight(state.chartHeight);
       if (state.topChartHeight) setTopChartHeight(state.topChartHeight);
       if (state.bottomChartHeight) setBottomChartHeight(state.bottomChartHeight);
+      if (state.rawData) setRawData(state.rawData);
       setActiveVersionId(versionId);
-      
-      await restoreState(sessionId, state.extrema);
-      
-      const patternResult = await getPatternEvents(sessionId, state.selectedPattern);
+      setShowUploadForm(false);
+      setShowMainTrend(true);
+
+      // Ensure we have a valid backend session
+      let activeSid = sessionId;
+      if (!activeSid || !(await checkSession(activeSid))) {
+        // Re-create session from saved raw data
+        if (state.rawData) {
+          const result = await loadSavepoint(state.rawData, state.extrema, state.frequency || 100);
+          activeSid = result.session_id;
+          setSessionId(activeSid);
+        } else {
+          setError('Cannot restore backend session (no raw data). Please re-upload your CSV.');
+          return;
+        }
+      } else {
+        await restoreState(activeSid, state.extrema);
+      }
+
+      const patternResult = await getPatternEvents(activeSid, state.selectedPattern);
       setEvents(patternResult.events);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to restore state');

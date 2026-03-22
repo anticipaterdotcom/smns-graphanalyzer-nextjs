@@ -78,7 +78,8 @@ export default function MeanTrendsAnalyzer({
 
   useEffect(() => {
     loadFromSession();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadFromSession]);
 
   const processCSVWithInterpolation = useCallback((segments: number[][]) => {
     const lengths = segments.map(s => s.length);
@@ -185,16 +186,6 @@ export default function MeanTrendsAnalyzer({
     e.target.value = '';
   }, [processCSVWithInterpolation]);
 
-  const catmullRom = (p0: number, p1: number, p2: number, p3: number, t: number): number => {
-    const t2 = t * t;
-    const t3 = t2 * t;
-    return 0.5 * (
-      (2 * p1) +
-      (-p0 + p2) * t +
-      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-      (-p0 + 3 * p1 - 3 * p2 + p3) * t3
-    );
-  };
 
   const meanChartData = useMemo(() => {
     if (!data) return [];
@@ -232,7 +223,10 @@ export default function MeanTrendsAnalyzer({
       ...data.normalized_segments.flat(),
       ...data.raw_segments.flat(),
     ];
-    const maxVal = Math.max(...allValues);
+    let maxVal = -Infinity;
+    for (let i = 0; i < allValues.length; i++) {
+      if (allValues[i] > maxVal) maxVal = allValues[i];
+    }
     let yMax: number;
     if (maxVal < 5) {
       yMax = 5;

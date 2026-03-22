@@ -259,7 +259,7 @@ class GraphAnalyzer:
                 try:
                     f = interp1d(x_old, segment, kind='cubic', fill_value='extrapolate')
                     interpolated.append(f(x_new))
-                except:
+                except Exception:
                     interpolated.append(np.interp(x_new, x_old, segment))
             else:
                 interpolated.append(np.interp(x_new, x_old, segment))
@@ -301,7 +301,7 @@ class GraphAnalyzer:
                 try:
                     f = interp1d(x_old, segment, kind='cubic', fill_value='extrapolate')
                     normalized_segments.append(f(x_new).tolist())
-                except:
+                except Exception:
                     normalized_segments.append(np.interp(x_new, x_old, segment).tolist())
             else:
                 normalized_segments.append(np.interp(x_new, x_old, segment).tolist())

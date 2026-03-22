@@ -65,11 +65,15 @@ export default function SaveManager({
     }
   }, [showHistory]);
 
+  // Listen for cross-tab localStorage changes instead of polling
   useEffect(() => {
-    const interval = setInterval(() => {
-      setHistory(getVersionHistory());
-    }, 1000);
-    return () => clearInterval(interval);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'graph-analyzer-history') {
+        setHistory(getVersionHistory());
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   const handleSave = (download: boolean = false) => {

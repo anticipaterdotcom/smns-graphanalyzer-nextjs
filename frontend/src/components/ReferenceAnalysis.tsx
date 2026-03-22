@@ -261,32 +261,57 @@ export default function ReferenceAnalysis({
   }, []);
 
   const findExtremaLocal = useCallback((data: number[], minDistance: number = 10): Extremum[] => {
+    // Port of scipy.signal.find_peaks: find all local peaks, then enforce min distance
     if (data.length < 3) return [];
-    const maxima: Extremum[] = [];
-    const minima: Extremum[] = [];
+
+    // Find all local maxima candidates
+    const maxCandidates: number[] = [];
     for (let i = 1; i < data.length - 1; i++) {
       if (data[i] > data[i - 1] && data[i] > data[i + 1]) {
-        maxima.push({ value: data[i], index: i, type: 1 });
-      }
-      if (data[i] < data[i - 1] && data[i] < data[i + 1]) {
-        minima.push({ value: data[i], index: i, type: 0 });
+        maxCandidates.push(i);
       }
     }
-    const filterByDistance = (peaks: Extremum[], isMax: boolean): Extremum[] => {
-      if (peaks.length === 0) return [];
-      const sorted = [...peaks].sort((a, b) =>
-        isMax ? b.value - a.value : a.value - b.value
+
+    // Find all local minima candidates
+    const minCandidates: number[] = [];
+    for (let i = 1; i < data.length - 1; i++) {
+      if (data[i] < data[i - 1] && data[i] < data[i + 1]) {
+        minCandidates.push(i);
+      }
+    }
+
+    // Enforce min distance using scipy's priority-based approach:
+    // Sort peaks by prominence (value), then greedily keep peaks that
+    // respect the distance constraint
+    const filterByDistance = (indices: number[], isMax: boolean): number[] => {
+      if (indices.length === 0) return [];
+      // Sort by peak value (highest first for max, lowest first for min)
+      const sorted = [...indices].sort((a, b) =>
+        isMax ? data[b] - data[a] : data[a] - data[b]
       );
-      const kept: Extremum[] = [];
-      for (const p of sorted) {
-        if (kept.every(k => Math.abs(k.index - p.index) >= minDistance)) {
-          kept.push(p);
+      const keep = new Set<number>();
+      const occupied = new Set<number>();
+      for (const idx of sorted) {
+        let tooClose = false;
+        for (let d = -minDistance + 1; d < minDistance; d++) {
+          if (occupied.has(idx + d)) { tooClose = true; break; }
+        }
+        if (!tooClose) {
+          keep.add(idx);
+          occupied.add(idx);
         }
       }
-      return kept;
+      return indices.filter(i => keep.has(i));
     };
-    return [...filterByDistance(maxima, true), ...filterByDistance(minima, false)]
-      .sort((a, b) => a.index - b.index);
+
+    const maxIndices = filterByDistance(maxCandidates, true);
+    const minIndices = filterByDistance(minCandidates, false);
+
+    const result: Extremum[] = [
+      ...maxIndices.map(i => ({ value: data[i], index: i, type: 1 as number })),
+      ...minIndices.map(i => ({ value: data[i], index: i, type: 0 as number })),
+    ];
+    return result.sort((a, b) => a.index - b.index);
   }, []);
 
   const bottomExtrema = useMemo(() => allBottomExtrema[bottomColumn] ?? [], [allBottomExtrema, bottomColumn]);

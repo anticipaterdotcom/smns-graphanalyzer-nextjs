@@ -288,3 +288,38 @@ export async function restoreState(
   });
   return response.data;
 }
+
+export async function loadSavepoint(
+  rawData: number[][],
+  extrema: Extremum[],
+  frequency: number = 100.0
+): Promise<{ session_id: string }> {
+  const response = await api.post('/api/savepoint/load', {
+    raw_data: rawData,
+    extrema: extrema.map(e => ({
+      value: e.value,
+      index: e.index,
+      type: e.type,
+    })),
+    frequency,
+  });
+  return response.data;
+}
+
+export async function checkSession(sessionId: string): Promise<boolean> {
+  try {
+    await api.get(`/api/session/${sessionId}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getSavepoint(
+  sessionId: string
+): Promise<{ raw_data: number[][]; extrema: { value: number; index: number; type: number }[]; frequency: number }> {
+  const response = await api.post('/api/savepoint/save', {
+    session_id: sessionId,
+  });
+  return response.data;
+}

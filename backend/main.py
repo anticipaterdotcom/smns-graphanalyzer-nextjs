@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import io
+import uuid
 
 try:
     from backend.analyzer import GraphAnalyzer, Extremum
@@ -22,12 +23,23 @@ app = FastAPI(title="Graph Analyzer API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+MAX_SESSIONS = 50
+
 sessions: dict[str, GraphAnalyzer] = {}
+
+
+def _create_session(analyzer: GraphAnalyzer) -> str:
+    """Create a new session with a unique ID, evicting oldest if limit reached."""
+    if len(sessions) >= MAX_SESSIONS:
+        oldest_key = next(iter(sessions))
+        del sessions[oldest_key]
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = analyzer
+    return session_id
 
 
 class AnalyzeRequest(BaseModel):
@@ -81,10 +93,9 @@ async def load_default_data(delimiter: str = ";", trim_zeros: bool = False):
                 last = len(non_zero_mask) - 1 - np.argmax(non_zero_mask[::-1])
                 data = data[first:last+1]
         
-        session_id = f"session_{len(sessions)}"
         analyzer = GraphAnalyzer()
         analyzer.load_csv(data)
-        sessions[session_id] = analyzer
+        session_id = _create_session(analyzer)
         
         return {
             "session_id": session_id,
@@ -100,6 +111,8 @@ async def load_default_data(delimiter: str = ";", trim_zeros: bool = False):
 async def preview_file(file: UploadFile = File(...), delimiter: str = ";", trim_zeros: bool = False):
     try:
         content = await file.read()
+        if len(content) > 100 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 100MB)")
         df = pd.read_csv(io.BytesIO(content), delimiter=delimiter, header=None)
         data = df.values.astype(float)
         total_rows = data.shape[0]
@@ -140,6 +153,8 @@ async def preview_file(file: UploadFile = File(...), delimiter: str = ";", trim_
 async def upload_file(file: UploadFile = File(...), delimiter: str = ";", trim_zeros: bool = False):
     try:
         content = await file.read()
+        if len(content) > 100 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 100MB)")
         df = pd.read_csv(io.BytesIO(content), delimiter=delimiter, header=None)
         data = df.values.astype(float)
         
@@ -150,10 +165,9 @@ async def upload_file(file: UploadFile = File(...), delimiter: str = ";", trim_z
                 last = len(non_zero_mask) - 1 - np.argmax(non_zero_mask[::-1])
                 data = data[first:last+1]
         
-        session_id = f"session_{len(sessions)}"
         analyzer = GraphAnalyzer()
         analyzer.load_csv(data)
-        sessions[session_id] = analyzer
+        session_id = _create_session(analyzer)
         
         return {
             "session_id": session_id,
@@ -318,63 +332,22 @@ async def export_all_columns(request: ExportAllColumnsRequest):
     if request.session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    analyzer = sessions[request.session_id]
-    if analyzer.raw_data is None:
+    base_analyzer = sessions[request.session_id]
+    if base_analyzer.raw_data is None:
         raise HTTPException(status_code=400, detail="No data loaded")
 
-    num_cols = analyzer.raw_data.shape[1]
-    time_per_frame = 1.0 / request.frequency
+    num_cols = base_analyzer.raw_data.shape[1]
     results = {}
 
     for col in range(num_cols):
-        signal = analyzer.raw_data[:, col]
-        from scipy.signal import find_peaks as _find_peaks
-        max_idx, _ = _find_peaks(signal, distance=request.min_distance)
-        min_idx, _ = _find_peaks(-signal, distance=request.min_distance)
-
-        extrema_list = []
-        for i in max_idx:
-            extrema_list.append({"value": float(signal[i]), "index": int(i), "type": 1})
-        for i in min_idx:
-            extrema_list.append({"value": float(signal[i]), "index": int(i), "type": 0})
-        extrema_list.sort(key=lambda x: x["index"])
-
-        events = []
-        pattern = tuple(request.pattern)
-        for i in range(len(extrema_list) - 2):
-            if (extrema_list[i]["type"] == pattern[0] and
-                extrema_list[i+1]["type"] == pattern[1] and
-                extrema_list[i+2]["type"] == pattern[2]):
-                e0, e1, e2 = extrema_list[i], extrema_list[i+1], extrema_list[i+2]
-                event = {
-                    "start_value": e0["value"],
-                    "start_time": e0["index"] * time_per_frame,
-                    "start_index": e0["index"],
-                    "inflexion_value": e1["value"],
-                    "inflexion_time": e1["index"] * time_per_frame,
-                    "inflexion_index": e1["index"],
-                    "end_value": e2["value"],
-                    "end_time": e2["index"] * time_per_frame,
-                    "end_index": e2["index"],
-                    "shift_start_to_inflexion": abs(e0["value"] - e1["value"]),
-                    "shift_inflexion_to_end": abs(e2["value"] - e1["value"]),
-                    "time_start_to_inflexion": (e1["index"] - e0["index"]) * time_per_frame,
-                    "time_inflexion_to_end": (e2["index"] - e1["index"]) * time_per_frame,
-                    "cycle_time": (e2["index"] - e0["index"]) * time_per_frame,
-                    "pattern_type": "LHL" if pattern[0] == 0 else "HLH",
-                }
-                events.append(event)
-
-        for i in range(len(events)):
-            if i < len(events) - 1:
-                gap = events[i+1]["start_time"] - events[i]["end_time"]
-                events[i]["intercycle_time"] = gap if gap > 0 else None
-            else:
-                events[i]["intercycle_time"] = None
+        col_analyzer = GraphAnalyzer(frequency=request.frequency)
+        col_analyzer.load_csv(base_analyzer.raw_data)
+        extrema = col_analyzer.find_extrema(col, request.min_distance)
+        events = col_analyzer.find_pattern_events(tuple(request.pattern))
 
         results[str(col)] = {
             "column": col,
-            "extrema_count": len(extrema_list),
+            "extrema_count": len(extrema),
             "events": events,
         }
 
@@ -494,21 +467,19 @@ async def save_savepoint(request: SavepointRequest):
 
 @app.post("/api/savepoint/load")
 async def load_savepoint(savepoint: dict):
-    session_id = f"session_{len(sessions)}"
     analyzer = GraphAnalyzer(frequency=savepoint.get("frequency", 100.0))
     
     if savepoint.get("raw_data"):
         analyzer.raw_data = np.array(savepoint["raw_data"])
     
     for ext in savepoint.get("extrema", []):
-        from analyzer import Extremum
         analyzer.extrema.append(Extremum(
             value=ext["value"],
             index=ext["index"],
             extremum_type=ext["type"]
         ))
     
-    sessions[session_id] = analyzer
+    session_id = _create_session(analyzer)
     return {"session_id": session_id}
 
 
@@ -548,11 +519,14 @@ async def get_stick_figure_data(request: StickFigureRequest):
         if request.column < 0 or request.column >= num_cols:
             raise HTTPException(status_code=400, detail=f"Column {request.column} out of range")
         
-        # Skip padding (100 at start, 100 at end)
-        padding_start = 100
-        padding_end = 100
-        actual_start = padding_start
-        actual_end = num_frames - padding_end
+        # Detect actual data boundaries instead of assuming fixed padding
+        non_zero_mask = np.any(data != 0, axis=1)
+        if non_zero_mask.any():
+            actual_start = int(np.argmax(non_zero_mask))
+            actual_end = int(len(non_zero_mask) - np.argmax(non_zero_mask[::-1]))
+        else:
+            actual_start = 0
+            actual_end = num_frames
         
         col_data = data[actual_start:actual_end, request.column]
         num_frames = len(col_data)
