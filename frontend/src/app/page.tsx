@@ -262,18 +262,15 @@ export default function Home() {
         }
         
         const newExt: Extremum = { value: targetValue, index: targetIndex, type: type === 'max' ? 1 : 0 };
-        setExtrema((prev) => {
-          const filtered = prev.filter(e => Math.abs(e.index - targetIndex) >= 5);
-          return [...filtered, newExt].sort((a, b) => a.index - b.index);
-        });
-        
+
+        // Compute updated extrema list
+        const updatedExtrema = [...extrema.filter(e => Math.abs(e.index - targetIndex) >= 5), newExt]
+          .sort((a, b) => a.index - b.index);
+        setExtrema(updatedExtrema);
+
+        // Sync to backend and re-detect patterns
         if (sessionId) {
           try {
-            // Push full extrema state to backend to keep in sync
-            const updatedExtrema = [...data.length > 0 ? (() => {
-              const filtered = extrema.filter(e => Math.abs(e.index - targetIndex) >= 5);
-              return [...filtered, newExt].sort((a, b) => a.index - b.index);
-            })() : extrema];
             await restoreState(sessionId, updatedExtrema);
             if (selectedPattern.length > 0) {
               const patternResult = await getPatternEvents(sessionId, selectedPattern);
@@ -295,40 +292,21 @@ export default function Home() {
     async (index: number) => {
       if (data.length === 0) return;
       try {
-        setExtrema((prev) => {
-          // Find the closest extremum to the clicked point
-          let closestExtremum: Extremum | null = null;
-          let minDistance = Infinity;
-          
-          prev.forEach(e => {
-            const distance = Math.abs(e.index - index);
-            if (distance < minDistance) {
-              minDistance = distance;
-              closestExtremum = e;
-            }
-          });
-          
-          // Only remove if within reasonable range (50 points)
-          if (closestExtremum && minDistance <= 50) {
-            return prev.filter(e => e !== closestExtremum);
-          }
-          return prev;
+        // Compute the updated extrema list
+        let closestExtremum: Extremum | null = null;
+        let minDist = Infinity;
+        extrema.forEach(e => {
+          const d = Math.abs(e.index - index);
+          if (d < minDist) { minDist = d; closestExtremum = e; }
         });
-        
+        if (!closestExtremum || minDist > 50) return;
+
+        const updatedExtrema = extrema.filter(e => e !== closestExtremum);
+        setExtrema(updatedExtrema);
+
+        // Sync to backend and re-detect patterns
         if (sessionId) {
           try {
-            // Compute what the new extrema list will be after removal
-            let updatedExtrema = extrema;
-            let closestExtremum: Extremum | null = null;
-            let minDist = Infinity;
-            extrema.forEach(e => {
-              const d = Math.abs(e.index - index);
-              if (d < minDist) { minDist = d; closestExtremum = e; }
-            });
-            if (closestExtremum && minDist <= 50) {
-              updatedExtrema = extrema.filter(e => e !== closestExtremum);
-            }
-            // Push full extrema state to backend to keep in sync
             await restoreState(sessionId, updatedExtrema);
             if (selectedPattern.length > 0) {
               const patternResult = await getPatternEvents(sessionId, selectedPattern);
@@ -485,7 +463,7 @@ export default function Home() {
               disabled={isLoading}
               activeVersionId={activeVersionId}
             />
-            {sessionId && (
+            {(sessionId || data.length > 0) && (
               <button
                 onClick={() => setShowAnalysisParams(!showAnalysisParams)}
                 className={`p-2 bg-neutral-800 border border-white/10 rounded-lg hover:bg-neutral-700 transition-colors ${showAnalysisParams ? 'text-primary-400' : 'text-neutral-300'}`}
@@ -494,11 +472,11 @@ export default function Home() {
                 <Settings className="w-4 h-4" />
               </button>
             )}
-            {sessionId && (
+            {(sessionId || data.length > 0) && (
               <>
                 <div className="w-px h-6 bg-white/10" />
                 <button
-                  onClick={() => { setShowMainTrend(prev => { if (!prev) { setShowReferenceAnalysis(false); setShowMeanTrendsAnalyzer(false); setShowStickFigure(false); } return !prev; }); }}
+                  onClick={() => { if (showMainTrend) return; setShowMainTrend(true); setShowReferenceAnalysis(false); setShowMeanTrendsAnalyzer(false); setShowStickFigure(false); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
                     showMainTrend
                       ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white'
@@ -510,10 +488,9 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => {
-                    setShowReferenceAnalysis(prev => {
-                      if (!prev) { setShowMainTrend(false); setShowMeanTrendsAnalyzer(false); setShowStickFigure(false); setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }
-                      return !prev;
-                    });
+                    if (showReferenceAnalysis) return;
+                    setShowReferenceAnalysis(true); setShowMainTrend(false); setShowMeanTrendsAnalyzer(false); setShowStickFigure(false);
+                    setTimeout(() => referenceAnalysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
                   }}
                   disabled={isLoading || events.length < 1}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
@@ -527,10 +504,9 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => {
-                    setShowMeanTrendsAnalyzer(prev => {
-                      if (!prev) { setShowMainTrend(false); setShowReferenceAnalysis(false); setShowStickFigure(false); setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }
-                      return !prev;
-                    });
+                    if (showMeanTrendsAnalyzer) return;
+                    setShowMeanTrendsAnalyzer(true); setShowMainTrend(false); setShowReferenceAnalysis(false); setShowStickFigure(false);
+                    setTimeout(() => meanTrendsAnalyzerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
                   }}
                   disabled={isLoading || events.length < 2}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
@@ -545,7 +521,11 @@ export default function Home() {
                 <button
                   onClick={handleOpenStickFigure}
                   disabled={isLoading || columns < 2}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-blue-500 hover:to-emerald-500 transition-all disabled:opacity-50"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all disabled:opacity-50 ${
+                    showStickFigure
+                      ? 'bg-gradient-to-r from-blue-600 to-emerald-600 text-white'
+                      : 'bg-neutral-800 border border-white/10 text-neutral-400 hover:text-white hover:bg-neutral-700'
+                  }`}
                 >
                   <Film className="w-3.5 h-3.5" />
                   Stick
@@ -574,7 +554,7 @@ export default function Home() {
           <div className="max-w-xl mx-auto">
             <FileUpload onFileSelect={handleFileUpload} isLoading={isLoading} />
           </div>
-        ) : !sessionId ? (
+        ) : data.length === 0 ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary-500/30 border-t-primary-500"></div>
           </div>
@@ -609,14 +589,14 @@ export default function Home() {
               events={events}
               onPatternChange={handlePatternSelect}
               onEventHover={setHighlightedEvent}
-              onClose={() => setShowMainTrend(false)}
+              onClose={() => { /* Main is the default view, cannot close */ }}
               sessionId={sessionId}
               frequency={currentFrequency}
               chartHeight={chartHeight}
               onChartHeightChange={setChartHeight}
             />}
 
-            {showReferenceAnalysis && sessionId && data.length > 0 && (
+            {showReferenceAnalysis && data.length > 0 && (
               <div ref={referenceAnalysisRef}>
                 <ReferenceAnalysis
                   sessionId={sessionId}
@@ -624,7 +604,7 @@ export default function Home() {
                   analyzedData={data}
                   events={events}
                   totalColumns={columns}
-                  onClose={() => setShowReferenceAnalysis(false)}
+                  onClose={() => { setShowReferenceAnalysis(false); setShowMainTrend(true); }}
                   mainExtrema={extrema}
                   editMode={editMode}
                   editAction={editAction}
@@ -656,19 +636,19 @@ export default function Home() {
               <div ref={stickFigureRef}>
                 <StickFigurePlayer
                   data={stickFigureData}
-                  onClose={() => setShowStickFigure(false)}
+                  onClose={() => { setShowStickFigure(false); setShowMainTrend(true); }}
                 />
               </div>
             )}
 
-            {showMeanTrendsAnalyzer && sessionId && data.length > 0 && events.length >= 2 && (
+            {showMeanTrendsAnalyzer && data.length > 0 && events.length >= 2 && (
               <div ref={meanTrendsAnalyzerRef}>
                 <MeanTrendsAnalyzer
                   sessionId={sessionId}
                   pattern={selectedPattern}
                   column={currentColumn}
                   events={events}
-                  onClose={() => setShowMeanTrendsAnalyzer(false)}
+                  onClose={() => { setShowMeanTrendsAnalyzer(false); setShowMainTrend(true); }}
                 />
               </div>
             )}

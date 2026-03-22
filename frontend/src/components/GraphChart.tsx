@@ -358,7 +358,7 @@ export default function GraphChart({
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="font-semibold text-white">Main Trend</h3>
+        <h3 className="font-semibold text-white">Main Trend Analysis</h3>
         <div className="flex items-center gap-4 text-sm">
           <span className="flex items-center gap-2 text-neutral-300">
             <span className="w-3 h-3 rounded-full bg-primary-500" />

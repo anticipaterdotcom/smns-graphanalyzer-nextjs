@@ -106,6 +106,8 @@ export default function ReferenceAnalysis({
   const [bottomEditAction, setBottomEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
   const [bottomEpsilon, setBottomEpsilon] = useState(20);
   const [bottomHighlightIndex, setBottomHighlightIndex] = useState<number | null>(null);
+  const [bottomMinDistance, setBottomMinDistance] = useState(10);
+  const [bottomAutoDetected, setBottomAutoDetected] = useState(false);
   const [bottomPatternEvents, setBottomPatternEvents] = useState<RefPatternEvent[]>([]);
   const [showTopAreas, setShowTopAreas] = useState(true);
   const [showBottomAreas, setShowBottomAreas] = useState(false);
@@ -323,17 +325,31 @@ export default function ReferenceAnalysis({
     });
   }, [bottomColumn]);
 
+  const searchBottomExtrema = useCallback(() => {
+    if (bottomData.length === 0) return;
+    const detected = findExtremaLocal(bottomData, bottomMinDistance);
+    setBottomExtrema(detected);
+    setBottomAutoDetected(true);
+  }, [bottomData, bottomMinDistance, findExtremaLocal, setBottomExtrema]);
+
+  // Load top chart data when column selection changes
+  // Only reset extrema when the column actually changes, not on every parent re-render
+  const prevTopColumnRef = useRef<number | null>(null);
   useEffect(() => {
+    const columnChanged = prevTopColumnRef.current !== topColumn;
+    prevTopColumnRef.current = topColumn;
+
     const loadTopData = async () => {
       if (topColumn === analyzedColumn) {
         setTopData(analyzedData);
-        setTopExtrema(mainExtrema);
+        // Only sync extrema from parent when column changes, not on every parent update
+        if (columnChanged) setTopExtrema(mainExtrema);
         return;
       }
       try {
         const result = await getColumnData(sessionId, topColumn);
         setTopData(result.data);
-        setTopExtrema(findExtremaLocal(result.data));
+        if (columnChanged) setTopExtrema(findExtremaLocal(result.data));
       } catch (err) {
         console.error('Failed to load top chart data:', err);
       }
@@ -341,7 +357,11 @@ export default function ReferenceAnalysis({
     loadTopData();
   }, [sessionId, topColumn, analyzedColumn, analyzedData, mainExtrema, findExtremaLocal]);
 
+  const prevBottomColumnRef = useRef<number | null>(null);
   useEffect(() => {
+    const columnChanged = prevBottomColumnRef.current !== bottomColumn;
+    prevBottomColumnRef.current = bottomColumn;
+
     const loadBottomData = async () => {
       setIsLoading(true);
       try {
@@ -353,9 +373,10 @@ export default function ReferenceAnalysis({
           data = result.data;
         }
         setBottomData(data);
-        if (!allBottomExtrema[bottomColumn] || allBottomExtrema[bottomColumn].length === 0) {
-          const extrema = bottomColumn === analyzedColumn ? mainExtrema : findExtremaLocal(data);
-          setAllBottomExtrema(prev => ({ ...prev, [bottomColumn]: extrema }));
+        // Clear extrema when column changes -- user must click Search to detect
+        if (columnChanged) {
+          setAllBottomExtrema(prev => ({ ...prev, [bottomColumn]: [] }));
+          setBottomAutoDetected(false);
         }
       } catch (err) {
         console.error('Failed to load bottom chart data:', err);
@@ -811,7 +832,7 @@ export default function ReferenceAnalysis({
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-neutral-300">Top Chart:</p>
+              <p className="text-sm font-medium text-neutral-300">Main Graph:</p>
               <select
                 value={topColumn}
                 onChange={(e) => setTopColumn(Number(e.target.value))}
@@ -842,7 +863,7 @@ export default function ReferenceAnalysis({
           <div 
             ref={topChartRef}
             style={{ height: `${topChartHeight}px` }}
-            className={`rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : topIsDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`rounded-xl bg-neutral-900/50 p-4 ${topIsDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onWheel={(e) => {
               if (e.metaKey || e.ctrlKey) {
                 e.preventDefault();
@@ -898,7 +919,7 @@ export default function ReferenceAnalysis({
             }}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={topChartData} onClick={handleTopChartClick}>
+              <LineChart data={topChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis 
                   dataKey="index"
@@ -986,74 +1007,9 @@ export default function ReferenceAnalysis({
           </div>
         </div>
 
-        <div className="mt-3 p-4 bg-neutral-900/50 rounded-xl">
-          <div className="flex flex-wrap items-center gap-4 mb-4">
+        <div className="mt-3 p-3 bg-neutral-900/50 rounded-xl">
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-400">Pattern:</span>
-              <button
-                onClick={() => {
-                  setSelectedPattern('low-high-low');
-                  onPatternChange([0, 1, 0]);
-                }}
-                className={`px-3 py-1 text-xs rounded ${currentPattern[1] === 1 ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-              >
-                Low → High → Low
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedPattern('high-low-high');
-                  onPatternChange([1, 0, 1]);
-                }}
-                className={`px-3 py-1 text-xs rounded ${currentPattern[1] === 0 ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-              >
-                High → Low → High
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-400">Edit:</span>
-              <button
-                onClick={onToggleEditMode}
-                className={`flex items-center gap-1 px-3 py-1 text-xs rounded ${editMode ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-              >
-                <MousePointer className="w-3 h-3" />
-                {editMode ? 'ON' : 'OFF'}
-              </button>
-              {editMode && (
-                <>
-                  <button
-                    onClick={() => onEditActionChange('add-max')}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'add-max' ? 'bg-blue-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-                  >
-                    <Plus className="w-3 h-3" /> Max
-                  </button>
-                  <button
-                    onClick={() => onEditActionChange('add-min')}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'add-min' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-                  >
-                    <Plus className="w-3 h-3" /> Min
-                  </button>
-                  <button
-                    onClick={() => onEditActionChange('remove')}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${editAction === 'remove' ? 'bg-red-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-                  >
-                    <Minus className="w-3 h-3" /> Remove
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-400">Epsilon:</span>
-              <input
-                type="number"
-                value={epsilon}
-                onChange={(e) => onEpsilonChange(Number(e.target.value))}
-                className="w-16 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
-                min={1}
-                max={100}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-400">Extrema:</span>
               <span className="text-xs text-blue-400">{refMaxima.length} Max</span>
               <span className="text-xs text-emerald-400">{refMinima.length} Min</span>
             </div>
@@ -1064,94 +1020,12 @@ export default function ReferenceAnalysis({
               Pattern {showTopAreas ? 'ON' : 'OFF'}
             </button>
           </div>
-
-          {refPatternEvents.length > 0 && (
-            <div className="mt-4">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium text-white">Reference Parameters ({refPatternEvents.length} cycles)</h4>
-              </div>
-              <div className="overflow-x-auto max-h-48 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-neutral-900">
-                    <tr className="text-neutral-400 border-b border-white/10">
-                      <th className="px-2 py-1 text-left">#</th>
-                      <th className="px-2 py-1 text-left">Start</th>
-                      <th className="px-2 py-1 text-left">Inflection</th>
-                      <th className="px-2 py-1 text-left">End</th>
-                      <th className="px-2 py-1 text-left">Cycle Time</th>
-                      <th className="px-2 py-1 text-left">Main Cycle</th>
-                      <th className="px-2 py-1 text-left">Delay Time</th>
-                      <th className="px-2 py-1 text-left">Amplitude</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {refPatternEvents.map((evt, i) => (
-                      <tr
-                        key={i}
-                        className={`text-neutral-300 border-b border-white/5 cursor-pointer transition-colors ${highlightRange?.start === evt.startIndex ? 'bg-orange-600/20' : 'hover:bg-white/5'}`}
-                        onMouseEnter={() => setHighlightRange({ start: evt.startIndex, end: evt.endIndex })}
-                        onMouseLeave={() => setHighlightRange(null)}
-                      >
-                        <td className="px-2 py-1">{i + 1}</td>
-                        <td className="px-2 py-1">{evt.startValue.toFixed(2)}</td>
-                        <td className="px-2 py-1">{evt.inflectionValue.toFixed(2)}</td>
-                        <td className="px-2 py-1">{evt.endValue.toFixed(2)}</td>
-                        <td className="px-2 py-1">{evt.cycleTime.toFixed(3)}s</td>
-                        <td className="px-2 py-1">{evt.mainCycleIndex >= 0 ? `#${evt.mainCycleIndex + 1}` : 'N/A'}</td>
-                        <td className="px-2 py-1 text-orange-400">{evt.delayTime.toFixed(3)}s</td>
-                        <td className="px-2 py-1">{Math.abs(evt.inflectionValue - evt.startValue).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="bg-neutral-800/50 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-blue-400">Maxima ({refMaxima.length})</span>
-              </div>
-              <div className="max-h-24 overflow-y-auto space-y-1">
-                {refMaxima.map((ext: Extremum, i: number) => (
-                  <div
-                    key={`max-${ext.index}-${i}`}
-                    className={`flex items-center justify-between text-xs px-2 py-1 rounded cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
-                    onMouseEnter={() => setLocalHighlightIndex(ext.index)}
-                    onMouseLeave={() => setLocalHighlightIndex(null)}
-                  >
-                    <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
-                  </div>
-                ))}
-                {refMaxima.length === 0 && <span className="text-xs text-neutral-500">No maxima</span>}
-              </div>
-            </div>
-            <div className="bg-neutral-800/50 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-emerald-400">Minima ({refMinima.length})</span>
-              </div>
-              <div className="max-h-24 overflow-y-auto space-y-1">
-                {refMinima.map((ext: Extremum, i: number) => (
-                  <div
-                    key={`min-${ext.index}-${i}`}
-                    className={`flex items-center justify-between text-xs px-2 py-1 rounded cursor-pointer transition-colors ${localHighlightIndex === ext.index ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-neutral-900/50 hover:bg-neutral-800'}`}
-                    onMouseEnter={() => setLocalHighlightIndex(ext.index)}
-                    onMouseLeave={() => setLocalHighlightIndex(null)}
-                  >
-                    <span className="text-neutral-300">#{ext.index} = {ext.value.toFixed(2)}</span>
-                  </div>
-                ))}
-                {refMinima.length === 0 && <span className="text-xs text-neutral-500">No minima</span>}
-              </div>
-            </div>
-          </div>
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-2 mt-4">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-neutral-300">Bottom Chart:</p>
+              <p className="text-sm font-medium text-neutral-300">Reference Graph:</p>
               <select
                 value={bottomColumn}
                 onChange={(e) => setBottomColumn(Number(e.target.value))}
@@ -1333,6 +1207,22 @@ export default function ReferenceAnalysis({
 
           <div className="mt-3 p-3 bg-neutral-900/50 rounded-xl">
             <div className="flex flex-wrap items-center gap-4 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-400">Min Distance:</span>
+                <input
+                  type="number"
+                  value={bottomMinDistance}
+                  onChange={(e) => setBottomMinDistance(Math.max(1, Number(e.target.value)))}
+                  className="w-20 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+                  min={1}
+                />
+              </div>
+              <button
+                onClick={searchBottomExtrema}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-orange-600 text-white hover:bg-orange-500 transition-colors"
+              >
+                Search
+              </button>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-400">Edit:</span>
                 <button
