@@ -590,7 +590,7 @@ export default function Home() {
               onPatternChange={handlePatternSelect}
               onEventHover={setHighlightedEvent}
               onClose={() => { /* Main is the default view, cannot close */ }}
-              sessionId={sessionId}
+              sessionId={sessionId ?? undefined}
               frequency={currentFrequency}
               chartHeight={chartHeight}
               onChartHeightChange={setChartHeight}
@@ -599,7 +599,7 @@ export default function Home() {
             {showReferenceAnalysis && data.length > 0 && (
               <div ref={referenceAnalysisRef}>
                 <ReferenceAnalysis
-                  sessionId={sessionId}
+                  sessionId={sessionId || ''}
                   analyzedColumn={currentColumn}
                   analyzedData={data}
                   events={events}
