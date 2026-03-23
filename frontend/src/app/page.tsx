@@ -264,7 +264,7 @@ export default function Home() {
         const newExt: Extremum = { value: targetValue, index: targetIndex, type: type === 'max' ? 1 : 0 };
 
         // Compute updated extrema list
-        const updatedExtrema = [...extrema.filter(e => Math.abs(e.index - targetIndex) >= 5), newExt]
+        const updatedExtrema = [...extrema.filter(e => e.index !== targetIndex), newExt]
           .sort((a, b) => a.index - b.index);
         setExtrema(updatedExtrema);
 
@@ -293,15 +293,18 @@ export default function Home() {
       if (data.length === 0) return;
       try {
         // Compute the updated extrema list
-        let closestExtremum: Extremum | null = null;
-        let minDist = Infinity;
-        extrema.forEach(e => {
-          const d = Math.abs(e.index - index);
-          if (d < minDist) { minDist = d; closestExtremum = e; }
-        });
-        if (!closestExtremum || minDist > 50) return;
+        // First try exact match, then closest within tight tolerance
+        let target: Extremum | null = extrema.find(e => e.index === index) || null;
+        if (!target) {
+          let minDist = Infinity;
+          extrema.forEach(e => {
+            const d = Math.abs(e.index - index);
+            if (d < minDist) { minDist = d; target = e; }
+          });
+          if (!target || minDist > 15) return;
+        }
 
-        const updatedExtrema = extrema.filter(e => e !== closestExtremum);
+        const updatedExtrema = extrema.filter(e => e !== target);
         setExtrema(updatedExtrema);
 
         // Sync to backend and re-detect patterns

@@ -493,13 +493,18 @@ export default function ReferenceAnalysis({
 
   const addTopExtremum = useCallback((clickIndex: number, type: 'max' | 'min') => {
     if (topData.length === 0) return;
-    const start = Math.max(0, clickIndex - epsilon);
-    const end = Math.min(topData.length, clickIndex + epsilon + 1);
-    const window = topData.slice(start, end);
-    const localIdx = type === 'max'
-      ? window.indexOf(Math.max(...window))
-      : window.indexOf(Math.min(...window));
-    const actualIdx = start + localIdx;
+    let actualIdx: number;
+    if (epsilon === 0) {
+      actualIdx = Math.max(0, Math.min(clickIndex, topData.length - 1));
+    } else {
+      const start = Math.max(0, clickIndex - epsilon);
+      const end = Math.min(topData.length, clickIndex + epsilon + 1);
+      const win = topData.slice(start, end);
+      const localIdx = type === 'max'
+        ? win.reduce((best, val, i) => val > win[best] ? i : best, 0)
+        : win.reduce((best, val, i) => val < win[best] ? i : best, 0);
+      actualIdx = start + localIdx;
+    }
     const newExt: Extremum = {
       value: topData[actualIdx],
       index: actualIdx,
@@ -513,9 +518,11 @@ export default function ReferenceAnalysis({
 
   const removeTopExtremum = useCallback((targetIndex: number) => {
     setTopExtrema(prev => {
+      const exact = prev.find(e => e.index === targetIndex);
+      if (exact) return prev.filter(e => e.index !== targetIndex);
       const closest = prev.reduce<Extremum | null>((best, e) =>
         !best || Math.abs(e.index - targetIndex) < Math.abs(best.index - targetIndex) ? e : best, null);
-      if (closest && Math.abs(closest.index - targetIndex) <= 50) {
+      if (closest && Math.abs(closest.index - targetIndex) <= 15) {
         return prev.filter(e => e.index !== closest.index);
       }
       return prev;
@@ -540,19 +547,25 @@ export default function ReferenceAnalysis({
 
   const addBottomExtremum = useCallback((clickIndex: number, type: 'max' | 'min') => {
     if (bottomData.length === 0) return;
-    const start = Math.max(0, clickIndex - bottomEpsilon);
-    const end = Math.min(bottomData.length, clickIndex + bottomEpsilon + 1);
-    const window = bottomData.slice(start, end);
-    const localIdx = type === 'max'
-      ? window.indexOf(Math.max(...window))
-      : window.indexOf(Math.min(...window));
-    const actualIdx = start + localIdx;
+    let actualIdx: number;
+    if (bottomEpsilon === 0) {
+      actualIdx = Math.max(0, Math.min(clickIndex, bottomData.length - 1));
+    } else {
+      const start = Math.max(0, clickIndex - bottomEpsilon);
+      const end = Math.min(bottomData.length, clickIndex + bottomEpsilon + 1);
+      const win = bottomData.slice(start, end);
+      const localIdx = type === 'max'
+        ? win.reduce((best, val, i) => val > win[best] ? i : best, 0)
+        : win.reduce((best, val, i) => val < win[best] ? i : best, 0);
+      actualIdx = start + localIdx;
+    }
     const newExt: Extremum = {
       value: bottomData[actualIdx],
       index: actualIdx,
       type: type === 'max' ? 1 : 0,
     };
     setBottomExtrema(prev => {
+      // Only replace an extremum at the exact same index, never remove neighbors
       const filtered = prev.filter(e => e.index !== actualIdx);
       return [...filtered, newExt].sort((a, b) => a.index - b.index);
     });
@@ -560,9 +573,13 @@ export default function ReferenceAnalysis({
 
   const removeBottomExtremum = useCallback((targetIndex: number) => {
     setBottomExtrema(prev => {
+      // First try exact match
+      const exact = prev.find(e => e.index === targetIndex);
+      if (exact) return prev.filter(e => e.index !== targetIndex);
+      // For chart clicks: find the single closest extremum within a small tolerance
       const closest = prev.reduce<Extremum | null>((best, e) =>
         !best || Math.abs(e.index - targetIndex) < Math.abs(best.index - targetIndex) ? e : best, null);
-      if (closest && Math.abs(closest.index - targetIndex) <= 50) {
+      if (closest && Math.abs(closest.index - targetIndex) <= 15) {
         return prev.filter(e => e.index !== closest.index);
       }
       return prev;
