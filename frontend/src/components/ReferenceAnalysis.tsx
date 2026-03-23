@@ -26,9 +26,18 @@ interface RefPatternEvent {
   inflectionIndex: number;
   endIndex: number;
   startValue: number;
+  startTime: number;
   inflectionValue: number;
+  inflectionTime: number;
   endValue: number;
+  endTime: number;
+  shiftStartToInflexion: number;
+  shiftInflexionToEnd: number;
+  timeStartToInflexion: number;
+  timeInflexionToEnd: number;
   cycleTime: number;
+  intercycleTime: number | null;
+  patternType: string;
   mainCycleIndex: number;
   delayTime: number;
 }
@@ -327,10 +336,13 @@ export default function ReferenceAnalysis({
 
   const searchBottomExtrema = useCallback(() => {
     if (bottomData.length === 0) return;
+    if (bottomExtrema.length > 0) {
+      if (!window.confirm('This will replace all current extrema with auto-detected ones. Continue?')) return;
+    }
     const detected = findExtremaLocal(bottomData, bottomMinDistance);
     setBottomExtrema(detected);
     setBottomAutoDetected(true);
-  }, [bottomData, bottomMinDistance, findExtremaLocal, setBottomExtrema]);
+  }, [bottomData, bottomMinDistance, bottomExtrema.length, findExtremaLocal, setBottomExtrema]);
 
   // Load top chart data when column selection changes
   // Only reset extrema when the column actually changes, not on every parent re-render
@@ -602,11 +614,33 @@ export default function ReferenceAnalysis({
           }
         }
         result.push({
-          startIndex: first.index, inflectionIndex: second.index, endIndex: third.index,
-          startValue: first.value, inflectionValue: second.value, endValue: third.value,
-          cycleTime, mainCycleIndex, delayTime,
+          startIndex: first.index,
+          inflectionIndex: second.index,
+          endIndex: third.index,
+          startValue: first.value,
+          startTime: first.index / frequency,
+          inflectionValue: second.value,
+          inflectionTime: second.index / frequency,
+          endValue: third.value,
+          endTime: third.index / frequency,
+          shiftStartToInflexion: Math.abs(first.value - second.value),
+          shiftInflexionToEnd: Math.abs(third.value - second.value),
+          timeStartToInflexion: (second.index - first.index) / frequency,
+          timeInflexionToEnd: (third.index - second.index) / frequency,
+          cycleTime,
+          intercycleTime: null, // computed below
+          patternType: (pattern === 'low-high-low') ? 'LHL' : 'HLH',
+          mainCycleIndex,
+          delayTime,
         });
         i += 2;
+      }
+    }
+    // Compute intercycle times
+    for (let j = 0; j < result.length; j++) {
+      if (j < result.length - 1) {
+        const gap = result[j + 1].startTime - result[j].endTime;
+        result[j].intercycleTime = gap > 0 ? gap : null;
       }
     }
     return result;
@@ -622,30 +656,35 @@ export default function ReferenceAnalysis({
 
   const exportParametersCSV = useCallback(() => {
     const headers = [
-      'Chart', '#', 'Start Index', 'Inflection Index', 'End Index',
-      'Start Value', 'Inflection Value', 'End Value',
-      'Cycle Time (s)', 'Main Cycle #', 'Delay Time (s)',
-      'Amplitude', 'Rise Time (s)', 'Fall Time (s)'
+      'Chart', '#', 'Pattern Type',
+      'Start Value', 'Start Time (s)',
+      'Inflexion Value', 'Inflexion Time (s)',
+      'End Value', 'End Time (s)',
+      'Shift Start-Inflexion', 'Shift Inflexion-End',
+      'Time Start-Inflexion (s)', 'Time Inflexion-End (s)',
+      'Cycle Time (s)', 'Intercycle Time (s)',
+      'Main Cycle #', 'Delay Time (s)'
     ];
     const buildRows = (evts: RefPatternEvent[], label: string) =>
-      evts.map((evt, i) => {
-        const amplitude = Math.abs(evt.inflectionValue - evt.startValue);
-        const riseTime = (evt.inflectionIndex - evt.startIndex) / frequency;
-        const fallTime = (evt.endIndex - evt.inflectionIndex) / frequency;
-        return [
-          label, i + 1, evt.startIndex, evt.inflectionIndex, evt.endIndex,
-          evt.startValue.toFixed(2), evt.inflectionValue.toFixed(2), evt.endValue.toFixed(2),
-          evt.cycleTime.toFixed(3), evt.mainCycleIndex >= 0 ? evt.mainCycleIndex + 1 : 'N/A', evt.delayTime.toFixed(3),
-          amplitude.toFixed(2), riseTime.toFixed(3), fallTime.toFixed(3)
-        ];
-      });
-    const rows = [...buildRows(refPatternEvents, `Top (Col ${topColumn + 1})`)];
+      evts.map((evt, i) => [
+        label, i + 1, evt.patternType,
+        evt.startValue.toFixed(4), evt.startTime.toFixed(4),
+        evt.inflectionValue.toFixed(4), evt.inflectionTime.toFixed(4),
+        evt.endValue.toFixed(4), evt.endTime.toFixed(4),
+        evt.shiftStartToInflexion.toFixed(4), evt.shiftInflexionToEnd.toFixed(4),
+        evt.timeStartToInflexion.toFixed(4), evt.timeInflexionToEnd.toFixed(4),
+        evt.cycleTime.toFixed(4),
+        evt.intercycleTime !== null ? evt.intercycleTime.toFixed(4) : '',
+        evt.mainCycleIndex >= 0 ? evt.mainCycleIndex + 1 : 'N/A',
+        evt.delayTime.toFixed(4)
+      ]);
     const colKeys = Object.keys(allBottomExtrema).map(Number).sort((a, b) => a - b);
+    const rows: (string | number)[][] = [];
     for (const col of colKeys) {
       const extrema = allBottomExtrema[col];
       if (!extrema || extrema.length === 0) continue;
       const colEvents = detectPatterns(extrema, selectedPattern);
-      rows.push(...buildRows(colEvents, `Bottom (Col ${col + 1})`));
+      rows.push(...buildRows(colEvents, `Reference (Col ${col + 1})`));
     }
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -814,7 +853,7 @@ export default function ReferenceAnalysis({
             <Layers className="w-5 h-5 text-orange-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">Reference Trend</h2>
+            <h2 className="text-lg font-semibold text-white">Reference Trend Analysis</h2>
             <p className="text-xs text-neutral-500">{events.length} pattern events detected</p>
           </div>
         </div>
@@ -832,7 +871,7 @@ export default function ReferenceAnalysis({
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-neutral-300">Main Graph:</p>
+              <p className="text-sm font-medium text-neutral-300">Main Trend:</p>
               <select
                 value={topColumn}
                 onChange={(e) => setTopColumn(Number(e.target.value))}
@@ -1025,7 +1064,7 @@ export default function ReferenceAnalysis({
         <div>
           <div className="flex items-center justify-between mb-2 mt-4">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-neutral-300">Reference Graph:</p>
+              <p className="text-sm font-medium text-neutral-300">Reference Trend (Column {bottomColumn + 1}):</p>
               <select
                 value={bottomColumn}
                 onChange={(e) => setBottomColumn(Number(e.target.value))}
@@ -1221,7 +1260,7 @@ export default function ReferenceAnalysis({
                 onClick={searchBottomExtrema}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-orange-600 text-white hover:bg-orange-500 transition-colors"
               >
-                Search
+                Detect Extrema
               </button>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-400">Edit:</span>
@@ -1344,18 +1383,26 @@ export default function ReferenceAnalysis({
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-sm font-medium text-white">Reference Parameters ({bottomPatternEvents.length} cycles)</h4>
               </div>
-              <div className="overflow-x-auto max-h-48 overflow-y-auto">
-                <table className="w-full text-xs">
+              <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                <table className="w-full text-xs whitespace-nowrap">
                   <thead className="sticky top-0 bg-neutral-900">
                     <tr className="text-neutral-400 border-b border-white/10">
                       <th className="px-2 py-1 text-left">#</th>
-                      <th className="px-2 py-1 text-left">Start</th>
-                      <th className="px-2 py-1 text-left">Inflection</th>
-                      <th className="px-2 py-1 text-left">End</th>
+                      <th className="px-2 py-1 text-left">Type</th>
+                      <th className="px-2 py-1 text-left">Start Val</th>
+                      <th className="px-2 py-1 text-left">Start Time</th>
+                      <th className="px-2 py-1 text-left">Infl. Val</th>
+                      <th className="px-2 py-1 text-left">Infl. Time</th>
+                      <th className="px-2 py-1 text-left">End Val</th>
+                      <th className="px-2 py-1 text-left">End Time</th>
+                      <th className="px-2 py-1 text-left">Shift S-I</th>
+                      <th className="px-2 py-1 text-left">Shift I-E</th>
+                      <th className="px-2 py-1 text-left">Time S-I</th>
+                      <th className="px-2 py-1 text-left">Time I-E</th>
                       <th className="px-2 py-1 text-left">Cycle Time</th>
+                      <th className="px-2 py-1 text-left">Intercycle</th>
                       <th className="px-2 py-1 text-left">Main Cycle</th>
-                      <th className="px-2 py-1 text-left">Delay Time</th>
-                      <th className="px-2 py-1 text-left">Amplitude</th>
+                      <th className="px-2 py-1 text-left">Delay</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1367,13 +1414,21 @@ export default function ReferenceAnalysis({
                         onMouseLeave={() => setHighlightRange(null)}
                       >
                         <td className="px-2 py-1">{i + 1}</td>
+                        <td className="px-2 py-1">{evt.patternType}</td>
                         <td className="px-2 py-1">{evt.startValue.toFixed(2)}</td>
+                        <td className="px-2 py-1">{evt.startTime.toFixed(4)}s</td>
                         <td className="px-2 py-1">{evt.inflectionValue.toFixed(2)}</td>
+                        <td className="px-2 py-1">{evt.inflectionTime.toFixed(4)}s</td>
                         <td className="px-2 py-1">{evt.endValue.toFixed(2)}</td>
-                        <td className="px-2 py-1">{evt.cycleTime.toFixed(3)}s</td>
+                        <td className="px-2 py-1">{evt.endTime.toFixed(4)}s</td>
+                        <td className="px-2 py-1">{evt.shiftStartToInflexion.toFixed(4)}</td>
+                        <td className="px-2 py-1">{evt.shiftInflexionToEnd.toFixed(4)}</td>
+                        <td className="px-2 py-1">{evt.timeStartToInflexion.toFixed(4)}s</td>
+                        <td className="px-2 py-1">{evt.timeInflexionToEnd.toFixed(4)}s</td>
+                        <td className="px-2 py-1">{evt.cycleTime.toFixed(4)}s</td>
+                        <td className="px-2 py-1">{evt.intercycleTime !== null ? `${evt.intercycleTime.toFixed(4)}s` : '\u2014'}</td>
                         <td className="px-2 py-1">{evt.mainCycleIndex >= 0 ? `#${evt.mainCycleIndex + 1}` : 'N/A'}</td>
-                        <td className="px-2 py-1 text-orange-400">{evt.delayTime.toFixed(3)}s</td>
-                        <td className="px-2 py-1">{Math.abs(evt.inflectionValue - evt.startValue).toFixed(2)}</td>
+                        <td className="px-2 py-1 text-orange-400">{evt.delayTime.toFixed(4)}s</td>
                       </tr>
                     ))}
                   </tbody>
