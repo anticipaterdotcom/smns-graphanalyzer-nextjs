@@ -336,13 +336,24 @@ export default function ReferenceAnalysis({
 
   const searchBottomExtrema = useCallback(() => {
     if (bottomData.length === 0) return;
-    if (bottomExtrema.length > 0) {
-      if (!window.confirm('This will replace all current extrema with auto-detected ones. Continue?')) return;
-    }
+    // Auto-detect from signal, then merge: manual edits are kept as anchors,
+    // auto-detected points are added only if they don't overlap with manual ones
     const detected = findExtremaLocal(bottomData, bottomMinDistance);
-    setBottomExtrema(detected);
+    const manual = bottomExtrema;
+    const manualIndices = new Set(manual.map(e => e.index));
+    // Keep all manual points, add detected ones that are far enough from any manual point
+    const merged = [...manual];
+    for (const d of detected) {
+      // Skip if too close to any existing manual point
+      const tooClose = manual.some(m => Math.abs(m.index - d.index) < bottomMinDistance);
+      if (!tooClose) {
+        merged.push(d);
+      }
+    }
+    merged.sort((a, b) => a.index - b.index);
+    setBottomExtrema(merged);
     setBottomAutoDetected(true);
-  }, [bottomData, bottomMinDistance, bottomExtrema.length, findExtremaLocal, setBottomExtrema]);
+  }, [bottomData, bottomMinDistance, bottomExtrema, findExtremaLocal, setBottomExtrema]);
 
   // Load top chart data when column selection changes
   // Only reset extrema when the column actually changes, not on every parent re-render
@@ -398,6 +409,13 @@ export default function ReferenceAnalysis({
     };
     loadBottomData();
   }, [sessionId, bottomColumn, analyzedColumn, analyzedData, mainExtrema, findExtremaLocal]);
+
+  // Auto-detect extrema when data or minDistance changes
+  useEffect(() => {
+    if (bottomData.length === 0) return;
+    searchBottomExtrema();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bottomData, bottomMinDistance]);
 
   const patternRanges = useMemo(() => {
     return events.map((e) => ({ start: e.start_index, end: e.end_index }));
@@ -1273,12 +1291,22 @@ export default function ReferenceAnalysis({
                   min={1}
                 />
               </div>
-              <button
-                onClick={searchBottomExtrema}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-orange-600 text-white hover:bg-orange-500 transition-colors"
-              >
-                Detect Extrema
-              </button>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-400">Pattern:</span>
+                <button
+                  onClick={() => setSelectedPattern('low-high-low')}
+                  className={`px-3 py-1 text-xs rounded ${selectedPattern === 'low-high-low' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                >
+                  Low → High → Low
+                </button>
+                <button
+                  onClick={() => setSelectedPattern('high-low-high')}
+                  className={`px-3 py-1 text-xs rounded ${selectedPattern === 'high-low-high' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                >
+                  High → Low → High
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-400">Edit:</span>
                 <button
