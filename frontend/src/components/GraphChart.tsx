@@ -71,6 +71,7 @@ export default function GraphChart({
   const isHighLowHigh = selectedPattern[1] === 0;
   const chartRef = useRef<HTMLDivElement>(null);
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
+  const [removeCandidate, setRemoveCandidate] = useState<number | null>(null);
   const [yZoom, setYZoom] = useState(1);
   const [yCenter, setYCenter] = useState<number | null>(null);
   const [xZoom, setXZoom] = useState(1);
@@ -170,7 +171,17 @@ export default function GraphChart({
 
       if (editMode && editAction) {
         if (editAction === 'remove') {
-          onRemoveExtremum?.(numIndex);
+          // Find the closest extremum to confirm
+          const allExt = [...maxima, ...minima];
+          const sorted = [...allExt].sort((a, b) =>
+            Math.abs(a.index - numIndex) - Math.abs(b.index - numIndex)
+          );
+          const target = sorted[0];
+          if (!target || Math.abs(target.index - numIndex) > 50) return;
+          const typeLabel = target.type === 1 ? 'Maximum' : 'Minimum';
+          if (window.confirm(`Remove ${typeLabel} at index ${target.index} (value: ${target.value.toFixed(2)})?`)) {
+            onRemoveExtremum?.(target.index);
+          }
         } else {
           onAddExtremum?.(numIndex, editAction === 'add-max' ? 'max' : 'min', epsilon);
         }
@@ -398,9 +409,8 @@ export default function GraphChart({
       <div 
         ref={chartRef} 
         style={{ height: `${chartHeight}px` }}
-        className={`rounded-xl bg-neutral-900/50 p-4 ${editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`rounded-xl bg-neutral-900/50 p-4 ${editMode && editAction === 'remove' ? 'cursor-pointer ring-2 ring-red-500/50' : editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         onMouseDown={(e) => {
-          if (editMode) return;
           const rect = chartRef.current?.getBoundingClientRect();
           if (!rect) return;
           const [yMin, yMax] = getYAxisDomain;
@@ -414,7 +424,7 @@ export default function GraphChart({
           });
         }}
         onMouseMove={(e) => {
-          if (!isDragging || !dragStart || editMode) return;
+          if (!isDragging || !dragStart) return;
           const rect = chartRef.current?.getBoundingClientRect();
           if (!rect) return;
           const deltaY = e.clientY - dragStart.y;
@@ -438,7 +448,25 @@ export default function GraphChart({
         }}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={enhancedChartData} onClick={handleClick}>
+          <LineChart data={enhancedChartData} onClick={handleClick}
+              onMouseMove={(e: any) => {
+                if (!editMode || editAction !== 'remove' || !e) {
+                  setRemoveCandidate(null);
+                  return;
+                }
+                const idx = e.activePayload?.[0]?.payload?.index ?? e.activeLabel;
+                if (idx === undefined || idx === null) { setRemoveCandidate(null); return; }
+                const numIdx = Number(idx);
+                const allExt = [...maxima, ...minima];
+                const closest = allExt.reduce<Extremum | null>((best, ext) =>
+                  !best || Math.abs(ext.index - numIdx) < Math.abs(best.index - numIdx) ? ext : best, null);
+                if (closest && Math.abs(closest.index - numIdx) <= 50) {
+                  setRemoveCandidate(closest.index);
+                } else {
+                  setRemoveCandidate(null);
+                }
+              }}
+              onMouseLeave={() => setRemoveCandidate(null)}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
             <XAxis
               dataKey="index"
@@ -490,30 +518,32 @@ export default function GraphChart({
               isAnimationActive={false}
             />
             {maxima.map((ext, i) => {
+              const isRemoveTarget = removeCandidate === ext.index;
               const isHighlighted = highlightedExtremumIndex === ext.index || localHighlightIndex === ext.index;
               return (
                 <ReferenceDot
                   key={`max-${ext.index}-${i}`}
                   x={ext.index}
                   y={ext.value}
-                  r={isHighlighted ? 10 : 6}
-                  fill={isHighLowHigh ? '#10b981' : '#3b82f6'}
-                  stroke={isHighlighted ? '#fff' : '#0f172a'}
-                  strokeWidth={isHighlighted ? 3 : 2}
+                  r={isRemoveTarget ? 10 : isHighlighted ? 10 : 6}
+                  fill={isRemoveTarget ? '#ef4444' : isHighLowHigh ? '#10b981' : '#3b82f6'}
+                  stroke={isRemoveTarget ? '#fff' : isHighlighted ? '#fff' : '#0f172a'}
+                  strokeWidth={isRemoveTarget ? 3 : isHighlighted ? 3 : 2}
                 />
               );
             })}
             {minima.map((ext, i) => {
+              const isRemoveTarget = removeCandidate === ext.index;
               const isHighlighted = highlightedExtremumIndex === ext.index || localHighlightIndex === ext.index;
               return (
                 <ReferenceDot
                   key={`min-${ext.index}-${i}`}
                   x={ext.index}
                   y={ext.value}
-                  r={isHighlighted ? 10 : 6}
-                  fill={isHighLowHigh ? '#3b82f6' : '#10b981'}
-                  stroke={isHighlighted ? '#fff' : '#0f172a'}
-                  strokeWidth={isHighlighted ? 3 : 2}
+                  r={isRemoveTarget ? 10 : isHighlighted ? 10 : 6}
+                  fill={isRemoveTarget ? '#ef4444' : isHighLowHigh ? '#3b82f6' : '#10b981'}
+                  stroke={isRemoveTarget ? '#fff' : isHighlighted ? '#fff' : '#0f172a'}
+                  strokeWidth={isRemoveTarget ? 3 : isHighlighted ? 3 : 2}
                 />
               );
             })}

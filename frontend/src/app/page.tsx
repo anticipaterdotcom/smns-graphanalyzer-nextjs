@@ -38,7 +38,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editAction, setEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
-  const [epsilon, setEpsilon] = useState(20);
+  const [epsilon, setEpsilon] = useState(0);
   const [currentColumn, setCurrentColumn] = useState(0);
   const [currentFrequency, setCurrentFrequency] = useState(250);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
@@ -301,7 +301,7 @@ export default function Home() {
             const d = Math.abs(e.index - index);
             if (d < minDist) { minDist = d; target = e; }
           });
-          if (!target || minDist > 15) return;
+          if (!target || minDist > 50) return;
         }
 
         const updatedExtrema = extrema.filter(e => e !== target);

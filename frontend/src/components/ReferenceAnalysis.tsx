@@ -113,8 +113,9 @@ export default function ReferenceAnalysis({
   const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>({});
   const [bottomEditMode, setBottomEditMode] = useState(false);
   const [bottomEditAction, setBottomEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
-  const [bottomEpsilon, setBottomEpsilon] = useState(20);
+  const [bottomEpsilon, setBottomEpsilon] = useState(0);
   const [bottomHighlightIndex, setBottomHighlightIndex] = useState<number | null>(null);
+  const [bottomRemoveCandidate, setBottomRemoveCandidate] = useState<number | null>(null);
   const [bottomMinDistance, setBottomMinDistance] = useState(10);
   const [bottomAutoDetected, setBottomAutoDetected] = useState(false);
   const [bottomPatternEvents, setBottomPatternEvents] = useState<RefPatternEvent[]>([]);
@@ -408,12 +409,19 @@ export default function ReferenceAnalysis({
       }
     };
     loadBottomData();
-  }, [sessionId, bottomColumn, analyzedColumn, analyzedData, mainExtrema, findExtremaLocal]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, bottomColumn, analyzedColumn, analyzedData]);
 
-  // Auto-detect extrema when data or minDistance changes
+  // Auto-detect extrema when minDistance changes (only if we have data)
+  const prevMinDistRef = useRef<number>(bottomMinDistance);
   useEffect(() => {
     if (bottomData.length === 0) return;
-    searchBottomExtrema();
+    // Run on minDistance change or first load (when no extrema yet)
+    const minDistChanged = prevMinDistRef.current !== bottomMinDistance;
+    prevMinDistRef.current = bottomMinDistance;
+    if (minDistChanged || bottomExtrema.length === 0) {
+      searchBottomExtrema();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bottomData, bottomMinDistance]);
 
@@ -540,7 +548,7 @@ export default function ReferenceAnalysis({
       if (exact) return prev.filter(e => e.index !== targetIndex);
       const closest = prev.reduce<Extremum | null>((best, e) =>
         !best || Math.abs(e.index - targetIndex) < Math.abs(best.index - targetIndex) ? e : best, null);
-      if (closest && Math.abs(closest.index - targetIndex) <= 15) {
+      if (closest && Math.abs(closest.index - targetIndex) <= 50) {
         return prev.filter(e => e.index !== closest.index);
       }
       return prev;
@@ -594,10 +602,10 @@ export default function ReferenceAnalysis({
       // First try exact match
       const exact = prev.find(e => e.index === targetIndex);
       if (exact) return prev.filter(e => e.index !== targetIndex);
-      // For chart clicks: find the single closest extremum within a small tolerance
+      // For chart clicks: find the single closest extremum
       const closest = prev.reduce<Extremum | null>((best, e) =>
         !best || Math.abs(e.index - targetIndex) < Math.abs(best.index - targetIndex) ? e : best, null);
-      if (closest && Math.abs(closest.index - targetIndex) <= 15) {
+      if (closest && Math.abs(closest.index - targetIndex) <= 50) {
         return prev.filter(e => e.index !== closest.index);
       }
       return prev;
@@ -612,12 +620,21 @@ export default function ReferenceAnalysis({
       if (index === undefined || index === null) return;
       const idx = Number(index);
       if (bottomEditAction === 'remove') {
-        removeBottomExtremum(idx);
+        // Find the closest extremum to show in confirm dialog
+        const sorted = [...bottomExtrema].sort((a, b) => 
+          Math.abs(a.index - idx) - Math.abs(b.index - idx)
+        );
+        const target = sorted[0];
+        if (!target || Math.abs(target.index - idx) > 50) return;
+        const typeLabel = target.type === 1 ? 'Maximum' : 'Minimum';
+        if (window.confirm(`Remove ${typeLabel} at index ${target.index} (value: ${target.value.toFixed(2)})?`)) {
+          removeBottomExtremum(target.index);
+        }
       } else {
         addBottomExtremum(idx, bottomEditAction === 'add-max' ? 'max' : 'min');
       }
     },
-    [bottomEditMode, bottomEditAction, addBottomExtremum, removeBottomExtremum]
+    [bottomEditMode, bottomEditAction, bottomExtrema, addBottomExtremum, removeBottomExtremum]
   );
 
   const detectPatterns = useCallback((extrema: Extremum[], pattern: 'low-high-low' | 'high-low-high'): RefPatternEvent[] => {
@@ -1131,7 +1148,7 @@ export default function ReferenceAnalysis({
           <div 
             ref={bottomChartRef}
             style={{ height: `${bottomChartHeight}px` }}
-            className={`rounded-xl bg-neutral-900/50 p-4 ${bottomEditMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : bottomIsDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`rounded-xl bg-neutral-900/50 p-4 ${bottomEditMode && bottomEditAction === 'remove' ? 'cursor-pointer ring-2 ring-red-500/50' : bottomEditMode ? 'cursor-crosshair ring-2 ring-orange-500/50' : bottomIsDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onWheel={(e) => {
               if (e.metaKey || e.ctrlKey) {
                 e.preventDefault();
@@ -1152,7 +1169,6 @@ export default function ReferenceAnalysis({
               }
             }}
             onMouseDown={(e) => {
-              if (bottomEditMode) return;
               const [yMin, yMax] = bottomYDomain;
               const { bottomMin, bottomMax } = getXAxisConfig;
               setBottomIsDragging(true);
@@ -1164,7 +1180,7 @@ export default function ReferenceAnalysis({
               });
             }}
             onMouseMove={(e) => {
-              if (!bottomIsDragging || !bottomDragStart || bottomEditMode) return;
+              if (!bottomIsDragging || !bottomDragStart) return;
               const rect = e.currentTarget.getBoundingClientRect();
               const deltaY = e.clientY - bottomDragStart.y;
               const deltaX = e.clientX - bottomDragStart.x;
@@ -1187,7 +1203,24 @@ export default function ReferenceAnalysis({
             }}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={bottomChartData} onClick={handleBottomChartClick}>
+              <LineChart data={bottomChartData} onClick={handleBottomChartClick}
+                onMouseMove={(e: any) => {
+                  if (!bottomEditMode || bottomEditAction !== 'remove' || !e) {
+                    setBottomRemoveCandidate(null);
+                    return;
+                  }
+                  const idx = e.activePayload?.[0]?.payload?.index ?? e.activeLabel;
+                  if (idx === undefined || idx === null) { setBottomRemoveCandidate(null); return; }
+                  const numIdx = Number(idx);
+                  const closest = bottomExtrema.reduce<Extremum | null>((best, ext) =>
+                    !best || Math.abs(ext.index - numIdx) < Math.abs(best.index - numIdx) ? ext : best, null);
+                  if (closest && Math.abs(closest.index - numIdx) <= 50) {
+                    setBottomRemoveCandidate(closest.index);
+                  } else {
+                    setBottomRemoveCandidate(null);
+                  }
+                }}
+                onMouseLeave={() => setBottomRemoveCandidate(null)}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis 
                   dataKey="index"
@@ -1253,28 +1286,36 @@ export default function ReferenceAnalysis({
                   dot={false}
                   isAnimationActive={false}
                 />
-                {bottomExtrema.filter(e => e.type === 1).map((ext, i) => (
-                  <ReferenceDot
-                    key={`bmax-${ext.index}-${i}`}
-                    x={ext.index}
-                    y={ext.value}
-                    r={bottomHighlightIndex === ext.index ? 6 : 4}
-                    fill="#3b82f6"
-                    stroke="#fff"
-                    strokeWidth={1}
-                  />
-                ))}
-                {bottomExtrema.filter(e => e.type === 0).map((ext, i) => (
-                  <ReferenceDot
-                    key={`bmin-${ext.index}-${i}`}
-                    x={ext.index}
-                    y={ext.value}
-                    r={bottomHighlightIndex === ext.index ? 6 : 4}
-                    fill="#10b981"
-                    stroke="#fff"
-                    strokeWidth={1}
-                  />
-                ))}
+                {bottomExtrema.filter(e => e.type === 1).map((ext, i) => {
+                  const isRemoveTarget = bottomRemoveCandidate === ext.index;
+                  const isHighlighted = bottomHighlightIndex === ext.index;
+                  return (
+                    <ReferenceDot
+                      key={`bmax-${ext.index}-${i}`}
+                      x={ext.index}
+                      y={ext.value}
+                      r={isRemoveTarget ? 10 : isHighlighted ? 6 : 4}
+                      fill={isRemoveTarget ? '#ef4444' : '#3b82f6'}
+                      stroke={isRemoveTarget ? '#fff' : '#fff'}
+                      strokeWidth={isRemoveTarget ? 3 : 1}
+                    />
+                  );
+                })}
+                {bottomExtrema.filter(e => e.type === 0).map((ext, i) => {
+                  const isRemoveTarget = bottomRemoveCandidate === ext.index;
+                  const isHighlighted = bottomHighlightIndex === ext.index;
+                  return (
+                    <ReferenceDot
+                      key={`bmin-${ext.index}-${i}`}
+                      x={ext.index}
+                      y={ext.value}
+                      r={isRemoveTarget ? 10 : isHighlighted ? 6 : 4}
+                      fill={isRemoveTarget ? '#ef4444' : '#10b981'}
+                      stroke={isRemoveTarget ? '#fff' : '#fff'}
+                      strokeWidth={isRemoveTarget ? 3 : 1}
+                    />
+                  );
+                })}
               </LineChart>
             </ResponsiveContainer>
           </div>
