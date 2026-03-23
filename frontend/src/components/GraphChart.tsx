@@ -171,17 +171,7 @@ export default function GraphChart({
 
       if (editMode && editAction) {
         if (editAction === 'remove') {
-          // Find the closest extremum to confirm
-          const allExt = [...maxima, ...minima];
-          const sorted = [...allExt].sort((a, b) =>
-            Math.abs(a.index - numIndex) - Math.abs(b.index - numIndex)
-          );
-          const target = sorted[0];
-          if (!target || Math.abs(target.index - numIndex) > 50) return;
-          const typeLabel = target.type === 1 ? 'Maximum' : 'Minimum';
-          if (window.confirm(`Remove ${typeLabel} at index ${target.index} (value: ${target.value.toFixed(2)})?`)) {
-            onRemoveExtremum?.(target.index);
-          }
+          onRemoveExtremum?.(numIndex);
         } else {
           onAddExtremum?.(numIndex, editAction === 'add-max' ? 'max' : 'min', epsilon);
         }

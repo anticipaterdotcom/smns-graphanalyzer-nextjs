@@ -173,10 +173,20 @@ export default function Home() {
       const patternResult = await getPatternEvents(result.session_id, defaultPattern);
       setEvents(patternResult.events);
 
-      // Fetch full raw data for session recovery
+      // Fetch full raw data for session recovery and save immediately
       try {
         const savepoint = await getSavepoint(result.session_id);
         setRawData(savepoint.raw_data);
+        // Save to version history with rawData included
+        const state = createSaveState(
+          result.session_id, defaultColumn, defaultPattern,
+          analysisResult.extrema, patternResult.events,
+          analysisResult.column_data, result.columns,
+          'Initial upload'
+        );
+        state.frequency = defaultFrequency;
+        state.rawData = savepoint.raw_data;
+        addToVersionHistory(state);
       } catch (e) {
         console.warn('Failed to fetch raw data for savepoint');
       }
@@ -206,14 +216,28 @@ export default function Home() {
         setEvents(patternResult.events);
 
         // Fetch full raw data for session recovery
+        let fetchedRawData = rawData;
         try {
           const savepoint = await getSavepoint(sessionId);
           setRawData(savepoint.raw_data);
+          fetchedRawData = savepoint.raw_data;
         } catch (e) {
           console.warn('Failed to fetch raw data for savepoint');
         }
 
-        autoSave(`Analysis col ${column}`);
+        // Save with rawData guaranteed
+        const state = createSaveState(
+          sessionId, column, defaultPattern,
+          analysisResult.extrema, patternResult.events,
+          analysisResult.column_data, columns,
+          `Analysis col ${column}`
+        );
+        state.frequency = frequency;
+        state.chartHeight = chartHeight;
+        state.topChartHeight = topChartHeight;
+        state.bottomChartHeight = bottomChartHeight;
+        if (fetchedRawData) state.rawData = fetchedRawData;
+        addToVersionHistory(state);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Analysis failed');
       } finally {

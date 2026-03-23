@@ -620,16 +620,7 @@ export default function ReferenceAnalysis({
       if (index === undefined || index === null) return;
       const idx = Number(index);
       if (bottomEditAction === 'remove') {
-        // Find the closest extremum to show in confirm dialog
-        const sorted = [...bottomExtrema].sort((a, b) => 
-          Math.abs(a.index - idx) - Math.abs(b.index - idx)
-        );
-        const target = sorted[0];
-        if (!target || Math.abs(target.index - idx) > 50) return;
-        const typeLabel = target.type === 1 ? 'Maximum' : 'Minimum';
-        if (window.confirm(`Remove ${typeLabel} at index ${target.index} (value: ${target.value.toFixed(2)})?`)) {
-          removeBottomExtremum(target.index);
-        }
+        removeBottomExtremum(idx);
       } else {
         addBottomExtremum(idx, bottomEditAction === 'add-max' ? 'max' : 'min');
       }
