@@ -412,6 +412,36 @@ export default function MeanTrendsAnalyzer({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={loadFromSession}
+            disabled={isLoading || !sessionId || events.length < 2}
+            className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors disabled:opacity-50"
+            title="Reload mean trend from session events"
+          >
+            Use Events
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+            title="Upload CSV (columns = cycles)"
+          >
+            <Upload className="w-4 h-4" />
+          </button>
+          <a
+            href="/example_cycles.csv"
+            download
+            className="text-xs text-purple-400 hover:text-purple-300 underline"
+            title="Download example CSV"
+          >
+            Example
+          </a>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
           {onClose && (
             <button
               onClick={onClose}
@@ -425,41 +455,6 @@ export default function MeanTrendsAnalyzer({
 
       {/* Controls */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Data Source */}
-        <div className="space-y-2">
-          <label className="text-xs text-neutral-400 uppercase tracking-wide">Data Source</label>
-          <div className="flex gap-2">
-            <button
-              onClick={loadFromSession}
-              disabled={isLoading || !sessionId || events.length < 2}
-              className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
-            >
-              Use Events
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg transition-colors"
-              title="Upload CSV (columns = cycles)"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </div>
-          <a
-            href="/example_cycles.csv"
-            download
-            className="text-xs text-purple-400 hover:text-purple-300 underline"
-          >
-            Example CSV
-          </a>
-        </div>
-
         {/* Column */}
         <div className="space-y-2">
           <label className="text-xs text-neutral-400 uppercase tracking-wide">Column</label>
