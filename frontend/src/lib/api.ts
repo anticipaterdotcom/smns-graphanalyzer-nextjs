@@ -1,4 +1,5 @@
 import axios from 'axios';
+import * as Sentry from '@sentry/nextjs';
 
 const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || (isProduction ? '' : 'http://localhost:8000');
@@ -52,12 +53,18 @@ api.interceptors.response.use(
     const status = error?.response?.status;
     const url = error?.config?.url;
     const detail = error?.response?.data?.detail ?? error?.response?.data;
-    logFailureTicket({
+    const ticket = logFailureTicket({
       url,
       status,
       message: error?.message ?? 'Request failed',
       detail,
     });
+    try {
+      Sentry.captureException(error, {
+        tags: { url: ticket.url ?? 'unknown', status: String(ticket.status ?? 'unknown') },
+        extra: { ticket },
+      });
+    } catch { /* ignore */ }
     return Promise.reject(error);
   }
 );
