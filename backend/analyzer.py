@@ -3,7 +3,7 @@ Graph Analyzer - Core analysis module
 Converted from MATLAB Graph_Analyzer_v2025_03_08.m
 """
 import numpy as np
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, savgol_filter
 from scipy.interpolate import interp1d
 from typing import List, Tuple, Optional
 import json
@@ -15,6 +15,26 @@ class Extremum:
     value: float
     index: int
     extremum_type: int  # 1 = max, 0 = min
+
+
+def _smooth_for_spline(values: np.ndarray) -> np.ndarray:
+    """Apply a Savitzky-Golay filter so spline output visibly differs from linear.
+
+    Window scales with the signal length (~15% of points, odd, >=5), polyorder=3.
+    Falls back to the original values if the signal is too short to filter.
+    """
+    n = len(values)
+    if n < 7:
+        return values
+    window = max(5, int(round(n * 0.15)) | 1)
+    if window >= n:
+        window = n - 1 if n % 2 == 0 else n - 2
+    if window < 5:
+        return values
+    try:
+        return savgol_filter(values, window, 3)
+    except Exception:
+        return values
 
 
 def compute_pattern_events(extrema: List['Extremum'], pattern: Tuple[int, int, int], time_per_frame: float) -> List[dict]:
@@ -256,16 +276,18 @@ class GraphAnalyzer:
             if interpolation_method == 'spline' and len(segment) >= 4:
                 try:
                     f = interp1d(x_old, segment, kind='cubic', fill_value='extrapolate')
-                    interpolated.append(f(x_new))
+                    resampled = f(x_new)
+                    resampled = _smooth_for_spline(resampled)
+                    interpolated.append(resampled)
                 except Exception:
                     interpolated.append(np.interp(x_new, x_old, segment))
             else:
                 interpolated.append(np.interp(x_new, x_old, segment))
-        
+
         interpolated = np.array(interpolated)
         mean_trend = np.mean(interpolated, axis=0)
         std_trend = np.std(interpolated, axis=0)
-        
+
         return mean_trend, std_trend
     
     def calculate_mean_trend_extended(self, events: List[dict], column: int,
@@ -298,7 +320,9 @@ class GraphAnalyzer:
             if interpolation_method == 'spline' and len(segment) >= 4:
                 try:
                     f = interp1d(x_old, segment, kind='cubic', fill_value='extrapolate')
-                    normalized_segments.append(f(x_new).tolist())
+                    resampled = f(x_new)
+                    resampled = _smooth_for_spline(resampled)
+                    normalized_segments.append(resampled.tolist())
                 except Exception:
                     normalized_segments.append(np.interp(x_new, x_old, segment).tolist())
             else:
