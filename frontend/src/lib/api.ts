@@ -7,6 +7,61 @@ const api = axios.create({
   baseURL: API_BASE,
 });
 
+export interface FailureTicket {
+  id: string;
+  timestamp: string;
+  url?: string;
+  status?: number;
+  message: string;
+  detail?: unknown;
+}
+
+const FAILURE_LOG_KEY = 'graph-analyzer-failures';
+const MAX_FAILURES = 50;
+
+export function logFailureTicket(ticket: Omit<FailureTicket, 'id' | 'timestamp'>): FailureTicket {
+  const full: FailureTicket = {
+    ...ticket,
+    id: Math.random().toString(36).slice(2, 10),
+    timestamp: new Date().toISOString(),
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(FAILURE_LOG_KEY);
+      const list: FailureTicket[] = raw ? JSON.parse(raw) : [];
+      list.unshift(full);
+      localStorage.setItem(FAILURE_LOG_KEY, JSON.stringify(list.slice(0, MAX_FAILURES)));
+    } catch { /* ignore */ }
+  }
+  // eslint-disable-next-line no-console
+  console.warn('[failure-ticket]', full);
+  return full;
+}
+
+export function getFailureTickets(): FailureTicket[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(FAILURE_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const url = error?.config?.url;
+    const detail = error?.response?.data?.detail ?? error?.response?.data;
+    logFailureTicket({
+      url,
+      status,
+      message: error?.message ?? 'Request failed',
+      detail,
+    });
+    return Promise.reject(error);
+  }
+);
+
 export interface Extremum {
   value: number;
   index: number;
