@@ -61,14 +61,14 @@ export default function Home() {
   const meanTrendsAnalyzerRef = useRef<HTMLDivElement>(null);
   const analysisControlsRef = useRef<HTMLDivElement>(null);
 
-  const autoSave = useCallback((action: string) => {
+  const autoSave = useCallback((action: string, overrides?: { extrema?: Extremum[]; events?: PatternEvent[] }) => {
     if (data.length === 0) return;
     const state = createSaveState(
       sessionId,
       currentColumn,
       selectedPattern,
-      extrema,
-      events,
+      overrides?.extrema ?? extrema,
+      overrides?.events ?? events,
       data,
       columns,
       `Auto-save: ${action}`
@@ -275,8 +275,8 @@ export default function Home() {
       try {
         const result = await getPatternEvents(sessionId, pattern);
         setEvents(result.events);
-        
-        autoSave(`Pattern ${pattern.join('-')}`);
+
+        autoSave(`Pattern ${pattern.join('-')}`, { events: result.events });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Pattern detection failed');
       } finally {
@@ -313,18 +313,20 @@ export default function Home() {
         setExtrema(updatedExtrema);
 
         // Sync to backend and re-detect patterns
+        let updatedEvents = events;
         if (sessionId) {
           try {
             await restoreState(sessionId, updatedExtrema);
             if (selectedPattern.length > 0) {
               const patternResult = await getPatternEvents(sessionId, selectedPattern);
               setEvents(patternResult.events);
+              updatedEvents = patternResult.events;
             }
           } catch (err) {
             console.warn('Backend sync failed, continuing with local state');
           }
         }
-        autoSave(`Add ${type}`);
+        autoSave(`Add ${type}`, { extrema: updatedExtrema, events: updatedEvents });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add extremum');
       }
@@ -352,18 +354,20 @@ export default function Home() {
         setExtrema(updatedExtrema);
 
         // Sync to backend and re-detect patterns
+        let updatedEvents = events;
         if (sessionId) {
           try {
             await restoreState(sessionId, updatedExtrema);
             if (selectedPattern.length > 0) {
               const patternResult = await getPatternEvents(sessionId, selectedPattern);
               setEvents(patternResult.events);
+              updatedEvents = patternResult.events;
             }
           } catch (err) {
             console.warn('Backend sync failed, continuing with local state');
           }
         }
-        autoSave('Remove extremum');
+        autoSave('Remove extremum', { extrema: updatedExtrema, events: updatedEvents });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to remove extremum');
       }
@@ -380,7 +384,7 @@ export default function Home() {
     } catch {
       console.warn('Backend sync failed, continuing with local state');
     }
-    autoSave('Clear all extrema');
+    autoSave('Clear all extrema', { extrema: [], events: [] });
   }, [sessionId, autoSave]);
 
   const handleRunDetection = useCallback(() => {
