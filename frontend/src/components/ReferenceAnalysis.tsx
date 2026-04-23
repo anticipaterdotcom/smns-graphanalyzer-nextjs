@@ -131,37 +131,29 @@ export default function ReferenceAnalysis({
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
   const [highlightRange, setHighlightRange] = useState<{start: number, end: number} | null>(null);
   const [topExtrema, setTopExtrema] = useState<Extremum[]>(mainExtrema);
-  const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>(() => {
-    if (typeof window === 'undefined' || !sessionId) return {};
-    try {
-      const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>({});
+  const hydratedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!sessionId) return;
-    try {
-      localStorage.setItem(`ref-bottom-extrema:${sessionId}`, JSON.stringify(allBottomExtrema));
-    } catch {
-      // ignore quota errors
-    }
-  }, [allBottomExtrema, sessionId]);
-
-  useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || typeof window === 'undefined') return;
+    if (hydratedRef.current === sessionId) return;
     try {
       const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') setAllBottomExtrema(parsed);
       }
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
+    hydratedRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || typeof window === 'undefined') return;
+    if (hydratedRef.current !== sessionId) return;
+    try {
+      localStorage.setItem(`ref-bottom-extrema:${sessionId}`, JSON.stringify(allBottomExtrema));
+    } catch { /* ignore quota errors */ }
+  }, [allBottomExtrema, sessionId]);
   const [bottomEditMode, setBottomEditMode] = useState(false);
   const [bottomEditAction, setBottomEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
   const [bottomEpsilon, setBottomEpsilon] = useState(0);

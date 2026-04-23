@@ -131,6 +131,11 @@ export default function Home() {
             const newSid = result.session_id;
             setSessionId(newSid);
             setRawData(latest.state.rawData);
+            if (latest.state.refBottomExtrema && typeof window !== 'undefined') {
+              try {
+                localStorage.setItem(`ref-bottom-extrema:${newSid}`, JSON.stringify(latest.state.refBottomExtrema));
+              } catch { /* ignore */ }
+            }
 
             // Restore extrema and re-fetch pattern events
             await restoreState(newSid, latest.state.extrema);
@@ -443,11 +448,6 @@ export default function Home() {
       if (state.bottomChartHeight) setBottomChartHeight(state.bottomChartHeight);
       if (state.rawData) setRawData(state.rawData);
       setActiveVersionId(versionId);
-      if (state.refBottomExtrema && state.sessionId && typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(`ref-bottom-extrema:${state.sessionId}`, JSON.stringify(state.refBottomExtrema));
-        } catch { /* ignore */ }
-      }
       setShowUploadForm(false);
       setShowMainTrend(true);
 
@@ -465,6 +465,12 @@ export default function Home() {
         }
       } else {
         await restoreState(activeSid, state.extrema);
+      }
+
+      if (state.refBottomExtrema && activeSid && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`ref-bottom-extrema:${activeSid}`, JSON.stringify(state.refBottomExtrema));
+        } catch { /* ignore */ }
       }
 
       const patternResult = await getPatternEvents(activeSid, state.selectedPattern);
