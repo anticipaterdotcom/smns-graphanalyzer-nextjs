@@ -131,29 +131,58 @@ export default function ReferenceAnalysis({
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
   const [highlightRange, setHighlightRange] = useState<{start: number, end: number} | null>(null);
   const [topExtrema, setTopExtrema] = useState<Extremum[]>(mainExtrema);
-  const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>({});
-  const hydratedRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!sessionId || typeof window === 'undefined') return;
-    if (hydratedRef.current === sessionId) return;
+  const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>(() => {
+    if (typeof window === 'undefined' || !sessionId) return {};
     try {
       const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') setAllBottomExtrema(parsed);
-      }
-    } catch { /* ignore */ }
-    hydratedRef.current = sessionId;
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  const [allTopExtrema, setAllTopExtrema] = useState<Record<number, Extremum[]>>(() => {
+    if (typeof window === 'undefined' || !sessionId) return {};
+    try {
+      const raw = localStorage.getItem(`ref-top-extrema:${sessionId}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+
+  const loadedSidRef = useRef<string | undefined>(sessionId);
+  useEffect(() => {
+    if (!sessionId || typeof window === 'undefined') return;
+    if (sessionId === loadedSidRef.current) return;
+    try {
+      const rawB = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
+      setAllBottomExtrema(rawB ? JSON.parse(rawB) : {});
+      const rawT = localStorage.getItem(`ref-top-extrema:${sessionId}`);
+      setAllTopExtrema(rawT ? JSON.parse(rawT) : {});
+    } catch { setAllBottomExtrema({}); setAllTopExtrema({}); }
+    loadedSidRef.current = sessionId;
   }, [sessionId]);
+
+  const bottomReadyRef = useRef(false);
+  const topReadyRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId || typeof window === 'undefined') return;
-    if (hydratedRef.current !== sessionId) return;
-    try {
-      localStorage.setItem(`ref-bottom-extrema:${sessionId}`, JSON.stringify(allBottomExtrema));
-    } catch { /* ignore quota errors */ }
+    if (!bottomReadyRef.current) { bottomReadyRef.current = true; return; }
+    try { localStorage.setItem(`ref-bottom-extrema:${sessionId}`, JSON.stringify(allBottomExtrema)); } catch { /* ignore */ }
   }, [allBottomExtrema, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || typeof window === 'undefined') return;
+    if (!topReadyRef.current) { topReadyRef.current = true; return; }
+    try { localStorage.setItem(`ref-top-extrema:${sessionId}`, JSON.stringify(allTopExtrema)); } catch { /* ignore */ }
+  }, [allTopExtrema, sessionId]);
+
+  useEffect(() => {
+    setAllTopExtrema(prev => {
+      const current = prev[topColumn] ?? [];
+      if (current.length === topExtrema.length && current.every((e, i) => e.index === topExtrema[i]?.index && e.type === topExtrema[i]?.type)) {
+        return prev;
+      }
+      return { ...prev, [topColumn]: topExtrema };
+    });
+  }, [topExtrema, topColumn]);
   const [bottomEditMode, setBottomEditMode] = useState(false);
   const [bottomEditAction, setBottomEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
   const [bottomEpsilon, setBottomEpsilon] = useState(0);
@@ -395,14 +424,19 @@ export default function ReferenceAnalysis({
     const loadTopData = async () => {
       if (topColumn === analyzedColumn) {
         setTopData(analyzedData);
-        // Only sync extrema from parent when column changes, not on every parent update
-        if (columnChanged) setTopExtrema(mainExtrema);
+        if (columnChanged) {
+          const stored = allTopExtrema[topColumn];
+          setTopExtrema(stored && stored.length > 0 ? stored : mainExtrema);
+        }
         return;
       }
       try {
         const result = await getColumnData(sessionId, topColumn);
         setTopData(result.data);
-        if (columnChanged) setTopExtrema(findExtremaLocal(result.data));
+        if (columnChanged) {
+          const stored = allTopExtrema[topColumn];
+          setTopExtrema(stored && stored.length > 0 ? stored : findExtremaLocal(result.data));
+        }
       } catch (err) {
         console.error('Failed to load top chart data:', err);
       }

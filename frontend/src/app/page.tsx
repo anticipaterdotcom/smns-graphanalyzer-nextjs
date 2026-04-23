@@ -80,8 +80,10 @@ export default function Home() {
     if (rawData) state.rawData = rawData;
     if (sessionId && typeof window !== 'undefined') {
       try {
-        const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
-        if (raw) state.refBottomExtrema = JSON.parse(raw);
+        const rawB = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
+        if (rawB) state.refBottomExtrema = JSON.parse(rawB);
+        const rawT = localStorage.getItem(`ref-top-extrema:${sessionId}`);
+        if (rawT) state.refTopExtrema = JSON.parse(rawT);
       } catch { /* ignore */ }
     }
     addToVersionHistory(state);
@@ -131,9 +133,10 @@ export default function Home() {
             const newSid = result.session_id;
             setSessionId(newSid);
             setRawData(latest.state.rawData);
-            if (latest.state.refBottomExtrema && typeof window !== 'undefined') {
+            if (typeof window !== 'undefined') {
               try {
-                localStorage.setItem(`ref-bottom-extrema:${newSid}`, JSON.stringify(latest.state.refBottomExtrema));
+                if (latest.state.refBottomExtrema) localStorage.setItem(`ref-bottom-extrema:${newSid}`, JSON.stringify(latest.state.refBottomExtrema));
+                if (latest.state.refTopExtrema) localStorage.setItem(`ref-top-extrema:${newSid}`, JSON.stringify(latest.state.refTopExtrema));
               } catch { /* ignore */ }
             }
 
@@ -467,9 +470,10 @@ export default function Home() {
         await restoreState(activeSid, state.extrema);
       }
 
-      if (state.refBottomExtrema && activeSid && typeof window !== 'undefined') {
+      if (activeSid && typeof window !== 'undefined') {
         try {
-          localStorage.setItem(`ref-bottom-extrema:${activeSid}`, JSON.stringify(state.refBottomExtrema));
+          if (state.refBottomExtrema) localStorage.setItem(`ref-bottom-extrema:${activeSid}`, JSON.stringify(state.refBottomExtrema));
+          if (state.refTopExtrema) localStorage.setItem(`ref-top-extrema:${activeSid}`, JSON.stringify(state.refTopExtrema));
         } catch { /* ignore */ }
       }
 
