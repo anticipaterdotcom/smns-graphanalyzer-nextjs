@@ -49,8 +49,23 @@ export function getFailureTickets(): FailureTicket[] {
 
 type SessionRecovery = () => Promise<string | null>;
 let sessionRecovery: SessionRecovery | null = null;
+let recoveryInFlight: Promise<string | null> | null = null;
 export function registerSessionRecovery(fn: SessionRecovery | null) {
   sessionRecovery = fn;
+  recoveryInFlight = null;
+}
+
+async function runRecoveryOnce(): Promise<string | null> {
+  if (!sessionRecovery) return null;
+  if (!recoveryInFlight) {
+    recoveryInFlight = (async () => {
+      try { return await sessionRecovery!(); }
+      finally {
+        setTimeout(() => { recoveryInFlight = null; }, 2000);
+      }
+    })();
+  }
+  return recoveryInFlight;
 }
 
 api.interceptors.response.use(
@@ -64,7 +79,7 @@ api.interceptors.response.use(
     const cfg = error?.config;
     if (isSessionMissing && sessionRecovery && cfg && !cfg.__sessionRetried) {
       try {
-        const newSid = await sessionRecovery();
+        const newSid = await runRecoveryOnce();
         if (newSid) {
           cfg.__sessionRetried = true;
           if (cfg.data) {
