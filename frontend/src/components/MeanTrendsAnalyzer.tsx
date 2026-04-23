@@ -25,7 +25,7 @@ interface MeanTrendsAnalyzerProps {
   onClose?: () => void;
 }
 
-type PlotView = 'mean' | 'overlay' | 'raw';
+type PlotView = 'mean' | 'overlay' | 'raw' | 'all-columns';
 type LengthMode = 'average' | 'percentage';
 type InterpolationMethod = 'linear' | 'spline';
 
@@ -46,6 +46,7 @@ export default function MeanTrendsAnalyzer({
   const [selectedColumn, setSelectedColumn] = useState<number>(column);
   useEffect(() => { setSelectedColumn(column); }, [column]);
   const [data, setData] = useState<MeanTrendExtendedResponse | null>(null);
+  const [allColumnsData, setAllColumnsData] = useState<{ col: number; mean: number[] }[] | null>(null);
   const [csvData, setCsvData] = useState<number[][] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +80,31 @@ export default function MeanTrendsAnalyzer({
       setIsLoading(false);
     }
   }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation]);
+
+  const loadAllColumns = useCallback(async () => {
+    if (!sessionId || events.length < 2) return;
+    setIsLoading(true);
+    setError(null);
+    setAllColumnsData(null);
+    try {
+      const results = await Promise.all(
+        Array.from({ length: totalColumns }, (_, col) =>
+          getMeanTrendExtended(sessionId, pattern, col, undefined, lengthMode, interpolation)
+            .then((r) => ({ col, mean: r.mean }))
+            .catch(() => null)
+        )
+      );
+      setAllColumnsData(results.filter(Boolean) as { col: number; mean: number[] }[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load all columns');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionId, pattern, totalColumns, events.length, lengthMode, interpolation]);
+
+  useEffect(() => {
+    if (plotView === 'all-columns') loadAllColumns();
+  }, [plotView, loadAllColumns]);
 
   useEffect(() => {
     loadFromSession();
@@ -513,6 +539,7 @@ export default function MeanTrendsAnalyzer({
             <option value="mean">Mean ± SD</option>
             <option value="overlay">Mean + All Normalized</option>
             <option value="raw">Raw Cycles</option>
+            <option value="all-columns">All Columns</option>
           </select>
         </div>
       </div>
@@ -605,7 +632,7 @@ export default function MeanTrendsAnalyzer({
               <Line type="monotone" dataKey="mean" stroke="#ec4899" strokeWidth={3} dot={false} isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
-        ) : (
+        ) : plotView === 'raw' ? (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={rawChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
@@ -639,6 +666,48 @@ export default function MeanTrendsAnalyzer({
               ))}
             </LineChart>
           </ResponsiveContainer>
+        ) : allColumnsData && allColumnsData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={Array.from({ length: allColumnsData[0].mean.length }, (_, i) => {
+              const row: Record<string, number> = { index: i + 1 };
+              allColumnsData.forEach(({ col, mean }) => { row[`col${col}`] = mean[i]; });
+              return row;
+            })}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
+              <XAxis
+                dataKey="index"
+                type="number"
+                stroke="#64748b"
+                fontSize={12}
+                domain={[1, allColumnsData[0].mean.length]}
+              />
+              <YAxis stroke="#64748b" fontSize={12} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
+                  borderRadius: '12px',
+                  color: '#fff',
+                }}
+              />
+              {allColumnsData.map(({ col }, i) => (
+                <Line
+                  key={col}
+                  type="monotone"
+                  dataKey={`col${col}`}
+                  name={`Col ${col + 1}`}
+                  stroke={CYCLE_COLORS[i % CYCLE_COLORS.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
+            Loading all columns...
+          </div>
         )}
       </div>
 
