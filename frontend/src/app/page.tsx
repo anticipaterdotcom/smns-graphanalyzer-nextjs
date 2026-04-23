@@ -753,6 +753,7 @@ export default function Home() {
                   sessionId={sessionId}
                   pattern={selectedPattern}
                   column={currentColumn}
+                  totalColumns={columns}
                   events={events}
                   onClose={() => { setShowMeanTrendsAnalyzer(false); setShowMainTrend(true); }}
                 />

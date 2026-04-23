@@ -20,6 +20,7 @@ interface MeanTrendsAnalyzerProps {
   sessionId: string | null;
   pattern: number[];
   column: number;
+  totalColumns: number;
   events: { start_index: number; end_index: number }[];
   onClose?: () => void;
 }
@@ -38,9 +39,12 @@ export default function MeanTrendsAnalyzer({
   sessionId,
   pattern,
   column,
+  totalColumns,
   events,
   onClose,
 }: MeanTrendsAnalyzerProps) {
+  const [selectedColumn, setSelectedColumn] = useState<number>(column);
+  useEffect(() => { setSelectedColumn(column); }, [column]);
   const [data, setData] = useState<MeanTrendExtendedResponse | null>(null);
   const [csvData, setCsvData] = useState<number[][] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,7 +67,7 @@ export default function MeanTrendsAnalyzer({
       const result = await getMeanTrendExtended(
         sessionId,
         pattern,
-        column,
+        selectedColumn,
         undefined,
         lengthMode,
         interpolation
@@ -74,7 +78,7 @@ export default function MeanTrendsAnalyzer({
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, pattern, column, events.length, lengthMode, interpolation]);
+  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation]);
 
   useEffect(() => {
     loadFromSession();
@@ -428,6 +432,20 @@ export default function MeanTrendsAnalyzer({
           >
             Example CSV
           </a>
+        </div>
+
+        {/* Column */}
+        <div className="space-y-2">
+          <label className="text-xs text-neutral-400 uppercase tracking-wide">Column</label>
+          <select
+            value={selectedColumn}
+            onChange={(e) => setSelectedColumn(Number(e.target.value))}
+            className="w-full px-3 py-2 bg-neutral-800 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500"
+          >
+            {Array.from({ length: totalColumns }, (_, i) => (
+              <option key={i} value={i}>Column {i + 1}</option>
+            ))}
+          </select>
         </div>
 
         {/* Length Mode */}
