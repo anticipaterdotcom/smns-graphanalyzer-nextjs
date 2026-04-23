@@ -17,6 +17,7 @@ export interface SaveState {
   chartHeight?: number;
   topChartHeight?: number;
   bottomChartHeight?: number;
+  refBottomExtrema?: Record<number, Extremum[]>;
 }
 
 export interface VersionHistoryEntry {

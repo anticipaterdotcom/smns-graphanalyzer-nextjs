@@ -8,11 +8,13 @@ interface AnalysisControlsProps {
   onAnalyze: (column: number, minDistance: number, frequency: number) => void;
   isLoading?: boolean;
   hasExtrema?: boolean;
+  detectPatterns?: boolean;
+  onDetectPatternsChange?: (v: boolean) => void;
 }
 
-export default function AnalysisControls({ columns, onAnalyze, isLoading, hasExtrema }: AnalysisControlsProps) {
+export default function AnalysisControls({ columns, onAnalyze, isLoading, hasExtrema, detectPatterns = true, onDetectPatternsChange }: AnalysisControlsProps) {
   const [column, setColumn] = useState(4);
-  const [minDistance, setMinDistance] = useState(100);
+  const [minDistance, setMinDistance] = useState(95);
   const [frequency, setFrequency] = useState(250);
   const [showWarning, setShowWarning] = useState(false);
   const [pendingAnalysis, setPendingAnalysis] = useState<{column: number, minDistance: number, frequency: number} | null>(null);
@@ -81,6 +83,17 @@ export default function AnalysisControls({ columns, onAnalyze, isLoading, hasExt
             className="w-full px-4 py-3 bg-neutral-800 border border-neutral-600 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-neutral-300">Pattern detection:</span>
+        <button
+          type="button"
+          onClick={() => onDetectPatternsChange?.(!detectPatterns)}
+          className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${detectPatterns ? 'bg-yellow-600 text-white' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'}`}
+        >
+          {detectPatterns ? 'ON' : 'OFF'}
+        </button>
       </div>
 
       <button

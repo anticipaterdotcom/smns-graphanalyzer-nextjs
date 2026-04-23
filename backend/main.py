@@ -12,9 +12,9 @@ import io
 import uuid
 
 try:
-    from backend.analyzer import GraphAnalyzer, Extremum
+    from backend.analyzer import GraphAnalyzer, Extremum, compute_pattern_events
 except ImportError:
-    from analyzer import GraphAnalyzer, Extremum
+    from analyzer import GraphAnalyzer, Extremum, compute_pattern_events
 
 DEFAULT_CSV_PATH = Path(__file__).parent / "test_data.csv"
 
@@ -65,6 +65,18 @@ class ExtremumDelete(BaseModel):
 class PatternRequest(BaseModel):
     session_id: str
     pattern: List[int]
+
+
+class ExtremumIn(BaseModel):
+    value: float
+    index: int
+    type: int
+
+
+class PatternFromExtremaRequest(BaseModel):
+    extrema: List[ExtremumIn]
+    pattern: List[int]
+    frequency: float = 100.0
 
 
 class ColumnDataRequest(BaseModel):
@@ -227,12 +239,22 @@ async def remove_extremum(request: ExtremumDelete):
 async def get_pattern_events(request: PatternRequest):
     if request.session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     if len(request.pattern) != 3:
         raise HTTPException(status_code=400, detail="Pattern must have exactly 3 elements")
-    
+
     analyzer = sessions[request.session_id]
     events = analyzer.find_pattern_events(tuple(request.pattern))
+    return {"events": events, "count": len(events)}
+
+
+@app.post("/api/pattern/events-from-extrema")
+async def get_pattern_events_from_extrema(request: PatternFromExtremaRequest):
+    if len(request.pattern) != 3:
+        raise HTTPException(status_code=400, detail="Pattern must have exactly 3 elements")
+    extrema = [Extremum(value=e.value, index=e.index, extremum_type=e.type) for e in request.extrema]
+    time_per_frame = 1.0 / request.frequency if request.frequency > 0 else 0.01
+    events = compute_pattern_events(extrema, tuple(request.pattern), time_per_frame)
     return {"events": events, "count": len(events)}
 
 

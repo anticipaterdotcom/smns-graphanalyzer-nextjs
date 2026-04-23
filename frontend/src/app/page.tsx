@@ -41,6 +41,8 @@ export default function Home() {
   const [epsilon, setEpsilon] = useState(0);
   const [currentColumn, setCurrentColumn] = useState(0);
   const [currentFrequency, setCurrentFrequency] = useState(250);
+  const [currentMinDistance, setCurrentMinDistance] = useState(95);
+  const [detectPatterns, setDetectPatterns] = useState(true);
   const [stickFigureData, setStickFigureData] = useState<StickFigureData | null>(null);
   const [showStickFigure, setShowStickFigure] = useState(false);
     const [showUploadForm, setShowUploadForm] = useState(false);
@@ -76,6 +78,12 @@ export default function Home() {
     state.topChartHeight = topChartHeight;
     state.bottomChartHeight = bottomChartHeight;
     if (rawData) state.rawData = rawData;
+    if (sessionId && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
+        if (raw) state.refBottomExtrema = JSON.parse(raw);
+      } catch { /* ignore */ }
+    }
     addToVersionHistory(state);
   }, [sessionId, currentColumn, selectedPattern, extrema, events, data, columns, currentFrequency, chartHeight, topChartHeight, bottomChartHeight, rawData]);
 
@@ -159,10 +167,11 @@ export default function Home() {
       setShowMainTrend(true);
 
       const defaultColumn = 0;
-      const defaultMinDistance = 100;
+      const defaultMinDistance = 95;
       const defaultFrequency = 250;
       setCurrentColumn(defaultColumn);
       setCurrentFrequency(defaultFrequency);
+      setCurrentMinDistance(defaultMinDistance);
 
       const analysisResult = await analyzeData(result.session_id, defaultColumn, defaultMinDistance, defaultFrequency);
       setExtrema(analysisResult.extrema);
@@ -204,6 +213,7 @@ export default function Home() {
       setError(null);
       setCurrentColumn(column);
       setCurrentFrequency(frequency);
+      setCurrentMinDistance(minDistance);
       try {
         const analysisResult = await analyzeData(sessionId, column, minDistance, frequency);
         setExtrema(analysisResult.extrema);
@@ -212,8 +222,10 @@ export default function Home() {
         // Auto-detect patterns with default pattern (Low → High → Low)
         const defaultPattern = [0, 1, 0];
         setSelectedPattern(defaultPattern);
-        const patternResult = await getPatternEvents(sessionId, defaultPattern);
-        setEvents(patternResult.events);
+        const detectedEvents = detectPatterns
+          ? (await getPatternEvents(sessionId, defaultPattern)).events
+          : [];
+        setEvents(detectedEvents);
 
         // Fetch full raw data for session recovery
         let fetchedRawData = rawData;
@@ -228,7 +240,7 @@ export default function Home() {
         // Save with rawData guaranteed
         const state = createSaveState(
           sessionId, column, defaultPattern,
-          analysisResult.extrema, patternResult.events,
+          analysisResult.extrema, detectedEvents,
           analysisResult.column_data, columns,
           `Analysis col ${column}`
         );
@@ -244,7 +256,7 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [sessionId, autoSave]
+    [sessionId, autoSave, detectPatterns]
   );
 
   const handlePatternSelect = useCallback(
@@ -351,6 +363,23 @@ export default function Home() {
     [data, extrema, sessionId, selectedPattern, autoSave]
   );
 
+  const handleClearExtrema = useCallback(async () => {
+    if (!sessionId) return;
+    setExtrema([]);
+    try {
+      await restoreState(sessionId, []);
+      setEvents([]);
+    } catch {
+      console.warn('Backend sync failed, continuing with local state');
+    }
+    autoSave('Clear all extrema');
+  }, [sessionId, autoSave]);
+
+  const handleRunDetection = useCallback(() => {
+    if (!sessionId) return;
+    handleAnalyze(currentColumn, currentMinDistance, currentFrequency);
+  }, [sessionId, currentColumn, currentMinDistance, currentFrequency, handleAnalyze]);
+
   const handleChartClick = useCallback(
     (index: number) => {
       if (!editMode || !editAction) return;
@@ -414,6 +443,11 @@ export default function Home() {
       if (state.bottomChartHeight) setBottomChartHeight(state.bottomChartHeight);
       if (state.rawData) setRawData(state.rawData);
       setActiveVersionId(versionId);
+      if (state.refBottomExtrema && state.sessionId && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`ref-bottom-extrema:${state.sessionId}`, JSON.stringify(state.refBottomExtrema));
+        } catch { /* ignore */ }
+      }
       setShowUploadForm(false);
       setShowMainTrend(true);
 
@@ -589,13 +623,14 @@ export default function Home() {
           <div className="space-y-8">
             {showAnalysisParams && (
               <div ref={analysisControlsRef}>
-                <AnalysisControls columns={columns} onAnalyze={handleAnalyze} isLoading={isLoading} hasExtrema={extrema.length > 0} />
+                <AnalysisControls columns={columns} onAnalyze={handleAnalyze} isLoading={isLoading} hasExtrema={extrema.length > 0} detectPatterns={detectPatterns} onDetectPatternsChange={setDetectPatterns} />
               </div>
             )}
 
             {showMainTrend && <GraphChart
               data={data}
               extrema={extrema}
+              onChartClick={handleChartClick}
               selectedPattern={selectedPattern}
               patternRanges={patternRanges}
               highlightRange={highlightedEvent ? { start: highlightedEvent.start_index, end: highlightedEvent.end_index } : null}
@@ -612,6 +647,14 @@ export default function Home() {
               onRemoveExtremum={handleRemoveExtremum}
               epsilon={epsilon}
               onEpsilonChange={setEpsilon}
+              minDistance={currentMinDistance}
+              onMinDistanceChange={(v) => {
+                setCurrentMinDistance(v);
+                if (sessionId) handleAnalyze(currentColumn, v, currentFrequency);
+              }}
+              onClearExtrema={handleClearExtrema}
+              onRunDetection={handleRunDetection}
+              detectPatterns={detectPatterns}
               highlightedExtremumIndex={highlightedExtremumIndex}
               events={events}
               onPatternChange={handlePatternSelect}
@@ -654,6 +697,13 @@ export default function Home() {
                   bottomChartHeight={bottomChartHeight}
                   onTopChartHeightChange={setTopChartHeight}
                   onBottomChartHeightChange={setBottomChartHeight}
+                  minDistance={currentMinDistance}
+                  onMinDistanceChange={(v) => {
+                    setCurrentMinDistance(v);
+                    if (sessionId) handleAnalyze(currentColumn, v, currentFrequency);
+                  }}
+                  onClearExtrema={handleClearExtrema}
+                  onRunDetection={handleRunDetection}
                 />
               </div>
             )}

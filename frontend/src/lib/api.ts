@@ -130,6 +130,19 @@ export async function getPatternEvents(
   return response.data;
 }
 
+export async function getPatternEventsFromExtrema(
+  extrema: Extremum[],
+  pattern: number[],
+  frequency: number
+): Promise<{ events: PatternEvent[]; count: number }> {
+  const response = await api.post('/api/pattern/events-from-extrema', {
+    extrema,
+    pattern,
+    frequency,
+  });
+  return response.data;
+}
+
 export async function getColumnData(
   sessionId: string,
   column: number

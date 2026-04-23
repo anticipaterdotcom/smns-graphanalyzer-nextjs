@@ -17,6 +17,40 @@ class Extremum:
     extremum_type: int  # 1 = max, 0 = min
 
 
+def compute_pattern_events(extrema: List['Extremum'], pattern: Tuple[int, int, int], time_per_frame: float) -> List[dict]:
+    sorted_ext = sorted(extrema, key=lambda e: e.index)
+    events = []
+    for i in range(len(sorted_ext) - 2):
+        if (sorted_ext[i].extremum_type == pattern[0] and
+            sorted_ext[i+1].extremum_type == pattern[1] and
+            sorted_ext[i+2].extremum_type == pattern[2]):
+            events.append({
+                'start_value': sorted_ext[i].value,
+                'start_time': sorted_ext[i].index * time_per_frame,
+                'start_index': sorted_ext[i].index,
+                'inflexion_value': sorted_ext[i+1].value,
+                'inflexion_time': sorted_ext[i+1].index * time_per_frame,
+                'inflexion_index': sorted_ext[i+1].index,
+                'end_value': sorted_ext[i+2].value,
+                'end_time': sorted_ext[i+2].index * time_per_frame,
+                'end_index': sorted_ext[i+2].index,
+                'shift_start_to_inflexion': abs(sorted_ext[i].value - sorted_ext[i+1].value),
+                'shift_inflexion_to_end': abs(sorted_ext[i+2].value - sorted_ext[i+1].value),
+                'time_start_to_inflexion': (sorted_ext[i+1].index - sorted_ext[i].index) * time_per_frame,
+                'time_inflexion_to_end': (sorted_ext[i+2].index - sorted_ext[i+1].index) * time_per_frame,
+                'cycle_time': (sorted_ext[i+2].index - sorted_ext[i].index) * time_per_frame,
+                'pattern_type': 'LHL' if pattern[0] == 0 else 'HLH',
+            })
+    for i in range(len(events)):
+        if i < len(events) - 1:
+            next_start = events[i + 1]['start_time']
+            current_end = events[i]['end_time']
+            events[i]['intercycle_time'] = next_start - current_end if next_start > current_end else None
+        else:
+            events[i]['intercycle_time'] = None
+    return events
+
+
 @dataclass
 class AnalysisResult:
     extrema: List[Extremum]
@@ -106,43 +140,7 @@ class GraphAnalyzer:
         self.extrema = unique
     
     def find_pattern_events(self, pattern: Tuple[int, int, int]) -> List[dict]:
-        events = []
-        for i in range(len(self.extrema) - 2):
-            if (self.extrema[i].extremum_type == pattern[0] and
-                self.extrema[i+1].extremum_type == pattern[1] and
-                self.extrema[i+2].extremum_type == pattern[2]):
-                
-                event = {
-                    'start_value': self.extrema[i].value,
-                    'start_time': self.extrema[i].index * self.time_per_frame,
-                    'start_index': self.extrema[i].index,
-                    'inflexion_value': self.extrema[i+1].value,
-                    'inflexion_time': self.extrema[i+1].index * self.time_per_frame,
-                    'inflexion_index': self.extrema[i+1].index,
-                    'end_value': self.extrema[i+2].value,
-                    'end_time': self.extrema[i+2].index * self.time_per_frame,
-                    'end_index': self.extrema[i+2].index,
-                    'shift_start_to_inflexion': abs(self.extrema[i].value - self.extrema[i+1].value),
-                    'shift_inflexion_to_end': abs(self.extrema[i+2].value - self.extrema[i+1].value),
-                    'time_start_to_inflexion': (self.extrema[i+1].index - self.extrema[i].index) * self.time_per_frame,
-                    'time_inflexion_to_end': (self.extrema[i+2].index - self.extrema[i+1].index) * self.time_per_frame,
-                    'cycle_time': (self.extrema[i+2].index - self.extrema[i].index) * self.time_per_frame,
-                    'pattern_type': 'LHL' if pattern[0] == 0 else 'HLH',
-                }
-                events.append(event)
-        
-        for i in range(len(events)):
-            if i < len(events) - 1:
-                next_start = events[i + 1]['start_time']
-                current_end = events[i]['end_time']
-                if next_start > current_end:
-                    events[i]['intercycle_time'] = next_start - current_end
-                else:
-                    events[i]['intercycle_time'] = None
-            else:
-                events[i]['intercycle_time'] = None
-        
-        return events
+        return compute_pattern_events(self.extrema, pattern, self.time_per_frame)
     
     def get_event_data(self, start_idx: int, end_idx: int, column: int) -> np.ndarray:
         if self.raw_data is None:

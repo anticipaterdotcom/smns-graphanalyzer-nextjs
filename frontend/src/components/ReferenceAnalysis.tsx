@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { X, Layers, Download, Image, Plus, Minus, MousePointer } from 'lucide-react';
+import { X, Layers, Download, Image, Plus, Minus, MousePointer, Maximize2, Trash2, Play, Eye, EyeOff } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -13,7 +13,7 @@ import {
   ReferenceArea,
   ReferenceDot,
 } from 'recharts';
-import { getColumnData, PatternEvent, Extremum } from '@/lib/api';
+import { getColumnData, getPatternEventsFromExtrema, PatternEvent, Extremum } from '@/lib/api';
 
 interface RefExtremum {
   index: number;
@@ -67,6 +67,10 @@ interface ReferenceAnalysisProps {
   bottomChartHeight?: number;
   onTopChartHeightChange?: (height: number) => void;
   onBottomChartHeightChange?: (height: number) => void;
+  minDistance?: number;
+  onMinDistanceChange?: (v: number) => void;
+  onClearExtrema?: () => void;
+  onRunDetection?: () => void;
 }
 
 export default function ReferenceAnalysis({
@@ -94,9 +98,21 @@ export default function ReferenceAnalysis({
   bottomChartHeight: propBottomChartHeight,
   onTopChartHeightChange,
   onBottomChartHeightChange,
+  minDistance,
+  onMinDistanceChange,
+  onClearExtrema,
+  onRunDetection,
 }: ReferenceAnalysisProps) {
   const [topColumn, setTopColumn] = useState(analyzedColumn);
-  const [bottomColumn, setBottomColumn] = useState(0);
+  const [bottomColumn, setBottomColumn] = useState(analyzedColumn === 0 ? 1 : 0);
+
+  useEffect(() => {
+    if (bottomColumn === topColumn) {
+      for (let c = 0; c < totalColumns; c++) {
+        if (c !== topColumn) { setBottomColumn(c); break; }
+      }
+    }
+  }, [topColumn, bottomColumn, totalColumns]);
   const [topData, setTopData] = useState<number[]>(analyzedData);
   const [bottomData, setBottomData] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -104,19 +120,54 @@ export default function ReferenceAnalysis({
   const topChartRef = useRef<HTMLDivElement>(null);
   const bottomChartRef = useRef<HTMLDivElement>(null);
   
-  const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>('low-high-low');
+  const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>(
+    currentPattern && currentPattern[1] === 0 ? 'high-low-high' : 'low-high-low'
+  );
+  useEffect(() => {
+    setSelectedPattern(currentPattern && currentPattern[1] === 0 ? 'high-low-high' : 'low-high-low');
+  }, [currentPattern]);
   const [refPatternEvents, setRefPatternEvents] = useState<RefPatternEvent[]>([]);
   const frequency = propFrequency;
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
   const [highlightRange, setHighlightRange] = useState<{start: number, end: number} | null>(null);
   const [topExtrema, setTopExtrema] = useState<Extremum[]>(mainExtrema);
-  const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>({});
+  const [allBottomExtrema, setAllBottomExtrema] = useState<Record<number, Extremum[]>>(() => {
+    if (typeof window === 'undefined' || !sessionId) return {};
+    try {
+      const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      localStorage.setItem(`ref-bottom-extrema:${sessionId}`, JSON.stringify(allBottomExtrema));
+    } catch {
+      // ignore quota errors
+    }
+  }, [allBottomExtrema, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') setAllBottomExtrema(parsed);
+      }
+    } catch {
+      // ignore
+    }
+  }, [sessionId]);
   const [bottomEditMode, setBottomEditMode] = useState(false);
   const [bottomEditAction, setBottomEditAction] = useState<'add-max' | 'add-min' | 'remove' | null>(null);
   const [bottomEpsilon, setBottomEpsilon] = useState(0);
   const [bottomHighlightIndex, setBottomHighlightIndex] = useState<number | null>(null);
   const [bottomRemoveCandidate, setBottomRemoveCandidate] = useState<number | null>(null);
-  const [bottomMinDistance, setBottomMinDistance] = useState(10);
+  const [bottomMinDistance, setBottomMinDistance] = useState(95);
   const [bottomAutoDetected, setBottomAutoDetected] = useState(false);
   const [bottomPatternEvents, setBottomPatternEvents] = useState<RefPatternEvent[]>([]);
   const [showTopAreas, setShowTopAreas] = useState(true);
@@ -337,24 +388,10 @@ export default function ReferenceAnalysis({
 
   const searchBottomExtrema = useCallback(() => {
     if (bottomData.length === 0) return;
-    // Auto-detect from signal, then merge: manual edits are kept as anchors,
-    // auto-detected points are added only if they don't overlap with manual ones
     const detected = findExtremaLocal(bottomData, bottomMinDistance);
-    const manual = bottomExtrema;
-    const manualIndices = new Set(manual.map(e => e.index));
-    // Keep all manual points, add detected ones that are far enough from any manual point
-    const merged = [...manual];
-    for (const d of detected) {
-      // Skip if too close to any existing manual point
-      const tooClose = manual.some(m => Math.abs(m.index - d.index) < bottomMinDistance);
-      if (!tooClose) {
-        merged.push(d);
-      }
-    }
-    merged.sort((a, b) => a.index - b.index);
-    setBottomExtrema(merged);
+    setBottomExtrema(detected);
     setBottomAutoDetected(true);
-  }, [bottomData, bottomMinDistance, bottomExtrema, findExtremaLocal, setBottomExtrema]);
+  }, [bottomData, bottomMinDistance, findExtremaLocal, setBottomExtrema]);
 
   // Load top chart data when column selection changes
   // Only reset extrema when the column actually changes, not on every parent re-render
@@ -439,17 +476,22 @@ export default function ReferenceAnalysis({
 
   const getXAxisConfig = useMemo(() => {
     const len = Math.max(topData.length, bottomData.length);
+    const roundedMax = Math.ceil(len / 100) * 100;
     const dataCenter = len / 2;
     const topCenter = topXCenter ?? dataCenter;
     const bottomCenter = bottomXCenter ?? dataCenter;
-    
+    const topDefault = topXCenter === null && topXZoom === 1;
+    const bottomDefault = bottomXCenter === null && bottomXZoom === 1;
+
     const topRange = len / topXZoom;
-    const topMin = Math.max(1, topCenter - topRange / 2);
-    const topMax = Math.min(len, topCenter + topRange / 2);
-    
+    let topMin = Math.max(1, topCenter - topRange / 2);
+    let topMax = Math.min(len, topCenter + topRange / 2);
+    if (topDefault) { topMin = 0; topMax = roundedMax; }
+
     const bottomRange = len / bottomXZoom;
-    const bottomMin = Math.max(1, bottomCenter - bottomRange / 2);
-    const bottomMax = Math.min(len, bottomCenter + bottomRange / 2);
+    let bottomMin = Math.max(1, bottomCenter - bottomRange / 2);
+    let bottomMax = Math.min(len, bottomCenter + bottomRange / 2);
+    if (bottomDefault) { bottomMin = 0; bottomMax = roundedMax; }
     
     const visibleRange = Math.max(topMax - topMin, bottomMax - bottomMin);
     let step: number;
@@ -481,15 +523,30 @@ export default function ReferenceAnalysis({
     };
   }, [topData.length, bottomData.length, topXZoom, topXCenter, bottomXZoom, bottomXCenter]);
 
+  const niceStep = (v: number) => {
+    const abs = Math.abs(v);
+    if (abs >= 1000) return 100;
+    if (abs >= 100) return 10;
+    if (abs >= 10) return 5;
+    return 1;
+  };
+
   const topYDomain = useMemo((): [number, number] => {
     const values = topData.filter(v => v !== 0);
     if (values.length === 0) return [0, 10];
     const maxVal = Math.max(...values);
     const minVal = Math.min(...values);
+    const isDefault = topYCenter === null && topYZoom === 1;
     const dataCenter = (maxVal + minVal) / 2;
     const center = topYCenter ?? dataCenter;
     const range = (maxVal - minVal) / topYZoom;
-    const domain: [number, number] = [center - range / 2, center + range / 2];
+    let yMin = center - range / 2;
+    let yMax = center + range / 2;
+    if (isDefault) {
+      yMax = Math.ceil(maxVal / niceStep(maxVal)) * niceStep(maxVal);
+      yMin = Math.floor(minVal / niceStep(minVal)) * niceStep(minVal);
+    }
+    const domain: [number, number] = [yMin, yMax];
     topYDomainRef.current = domain;
     return domain;
   }, [topData, topYZoom, topYCenter]);
@@ -499,13 +556,27 @@ export default function ReferenceAnalysis({
     if (values.length === 0) return [0, 10];
     const maxVal = Math.max(...values);
     const minVal = Math.min(...values);
+    const isDefault = bottomYCenter === null && bottomYZoom === 1;
     const dataCenter = (maxVal + minVal) / 2;
     const center = bottomYCenter ?? dataCenter;
     const range = (maxVal - minVal) / bottomYZoom;
-    const domain: [number, number] = [center - range / 2, center + range / 2];
+    let yMin = center - range / 2;
+    let yMax = center + range / 2;
+    if (isDefault) {
+      yMax = Math.ceil(maxVal / niceStep(maxVal)) * niceStep(maxVal);
+      yMin = Math.floor(minVal / niceStep(minVal)) * niceStep(minVal);
+    }
+    const domain: [number, number] = [yMin, yMax];
     bottomYDomainRef.current = domain;
     return domain;
   }, [bottomData, bottomYZoom, bottomYCenter]);
+
+  const resetTopView = useCallback(() => {
+    setTopYZoom(1); setTopYCenter(null); setTopXZoom(1); setTopXCenter(null);
+  }, []);
+  const resetBottomView = useCallback(() => {
+    setBottomYZoom(1); setBottomYCenter(null); setBottomXZoom(1); setBottomXCenter(null);
+  }, []);
 
   const columnOptions = Array.from({ length: totalColumns }, (_, i) => i);
 
@@ -628,76 +699,67 @@ export default function ReferenceAnalysis({
     [bottomEditMode, bottomEditAction, bottomExtrema, addBottomExtremum, removeBottomExtremum]
   );
 
-  const detectPatterns = useCallback((extrema: Extremum[], pattern: 'low-high-low' | 'high-low-high'): RefPatternEvent[] => {
+  const detectPatterns = useCallback(async (extrema: Extremum[], pattern: 'low-high-low' | 'high-low-high'): Promise<RefPatternEvent[]> => {
     if (extrema.length < 3) return [];
-    const sorted = [...extrema].sort((a, b) => a.index - b.index);
-    const result: RefPatternEvent[] = [];
+    const patternArray = pattern === 'low-high-low' ? [0, 1, 0] : [1, 0, 1];
+    const { events: backendEvents } = await getPatternEventsFromExtrema(extrema, patternArray, frequency);
+
     const avgCycleLen = events.length > 0
       ? events.reduce((sum, e) => sum + (e.end_index - e.start_index), 0) / events.length
       : 100;
     const tolerance = Math.round(avgCycleLen * 0.2);
 
-    for (let i = 0; i < sorted.length - 2; i++) {
-      const first = sorted[i];
-      const second = sorted[i + 1];
-      const third = sorted[i + 2];
-      const isLHL = first.type === 0 && second.type === 1 && third.type === 0;
-      const isHLH = first.type === 1 && second.type === 0 && third.type === 1;
-
-      if ((pattern === 'low-high-low' && isLHL) || (pattern === 'high-low-high' && isHLH)) {
-        const cycleTime = (third.index - first.index) / frequency;
-        let mainCycleIndex = -1;
-        let delayTime = 0;
-        for (let j = 0; j < events.length; j++) {
-          const mainEvent = events[j];
-          if (first.index >= mainEvent.start_index - tolerance && first.index <= mainEvent.end_index + tolerance) {
-            mainCycleIndex = j;
-            delayTime = (first.index - mainEvent.start_index) / frequency;
-            break;
-          }
+    return backendEvents.map(e => {
+      let mainCycleIndex = -1;
+      let delayTime = 0;
+      for (let j = 0; j < events.length; j++) {
+        const m = events[j];
+        if (e.start_index >= m.start_index - tolerance && e.start_index <= m.end_index + tolerance) {
+          mainCycleIndex = j;
+          delayTime = (e.start_index - m.start_index) / frequency;
+          break;
         }
-        result.push({
-          startIndex: first.index,
-          inflectionIndex: second.index,
-          endIndex: third.index,
-          startValue: first.value,
-          startTime: first.index / frequency,
-          inflectionValue: second.value,
-          inflectionTime: second.index / frequency,
-          endValue: third.value,
-          endTime: third.index / frequency,
-          shiftStartToInflexion: Math.abs(first.value - second.value),
-          shiftInflexionToEnd: Math.abs(third.value - second.value),
-          timeStartToInflexion: (second.index - first.index) / frequency,
-          timeInflexionToEnd: (third.index - second.index) / frequency,
-          cycleTime,
-          intercycleTime: null, // computed below
-          patternType: (pattern === 'low-high-low') ? 'LHL' : 'HLH',
-          mainCycleIndex,
-          delayTime,
-        });
-        i += 2;
       }
-    }
-    // Compute intercycle times
-    for (let j = 0; j < result.length; j++) {
-      if (j < result.length - 1) {
-        const gap = result[j + 1].startTime - result[j].endTime;
-        result[j].intercycleTime = gap > 0 ? gap : null;
-      }
-    }
-    return result;
+      return {
+        startIndex: e.start_index,
+        inflectionIndex: e.inflexion_index,
+        endIndex: e.end_index,
+        startValue: e.start_value,
+        startTime: e.start_time,
+        inflectionValue: e.inflexion_value,
+        inflectionTime: e.inflexion_time,
+        endValue: e.end_value,
+        endTime: e.end_time,
+        shiftStartToInflexion: e.shift_start_to_inflexion,
+        shiftInflexionToEnd: e.shift_inflexion_to_end,
+        timeStartToInflexion: e.time_start_to_inflexion,
+        timeInflexionToEnd: e.time_inflexion_to_end,
+        cycleTime: e.cycle_time,
+        intercycleTime: e.intercycle_time,
+        patternType: e.pattern_type,
+        mainCycleIndex,
+        delayTime,
+      };
+    });
   }, [frequency, events]);
 
   useEffect(() => {
-    setRefPatternEvents(detectPatterns(topExtrema, selectedPattern));
+    let cancelled = false;
+    detectPatterns(topExtrema, selectedPattern).then(result => {
+      if (!cancelled) setRefPatternEvents(result);
+    });
+    return () => { cancelled = true; };
   }, [topExtrema, selectedPattern, detectPatterns]);
 
   useEffect(() => {
-    setBottomPatternEvents(detectPatterns(bottomExtrema, selectedPattern));
+    let cancelled = false;
+    detectPatterns(bottomExtrema, selectedPattern).then(result => {
+      if (!cancelled) setBottomPatternEvents(result);
+    });
+    return () => { cancelled = true; };
   }, [bottomExtrema, selectedPattern, detectPatterns]);
 
-  const exportParametersCSV = useCallback(() => {
+  const exportParametersCSV = useCallback(async () => {
     const headers = [
       'Chart', '#', 'Pattern Type',
       'Start Value', 'Start Time (s)',
@@ -726,7 +788,7 @@ export default function ReferenceAnalysis({
     for (const col of colKeys) {
       const extrema = allBottomExtrema[col];
       if (!extrema || extrema.length === 0) continue;
-      const colEvents = detectPatterns(extrema, selectedPattern);
+      const colEvents = await detectPatterns(extrema, selectedPattern);
       rows.push(...buildRows(colEvents, `Reference (Col ${col + 1})`));
     }
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -748,11 +810,20 @@ export default function ReferenceAnalysis({
     const plotW = chartW - margin.left - margin.right;
     const plotH = chartH - margin.top - margin.bottom;
     const vals = colData.filter(v => v !== 0);
-    const yMin = vals.length > 0 ? Math.min(...vals) : 0;
-    const yMax = vals.length > 0 ? Math.max(...vals) : 10;
-    const yPad = (yMax - yMin) * 0.05 || 1;
-    const scaleX = (i: number) => margin.left + (i / Math.max(colData.length - 1, 1)) * plotW;
-    const scaleY = (v: number) => margin.top + plotH - ((v - (yMin - yPad)) / ((yMax + yPad) - (yMin - yPad))) * plotH;
+    const rawMin = vals.length > 0 ? Math.min(...vals) : 0;
+    const rawMax = vals.length > 0 ? Math.max(...vals) : 10;
+    const niceStep = (v: number) => {
+      const abs = Math.abs(v);
+      if (abs >= 1000) return 100;
+      if (abs >= 100) return 10;
+      if (abs >= 10) return 5;
+      return 1;
+    };
+    const yMax = Math.ceil(rawMax / niceStep(rawMax)) * niceStep(rawMax);
+    const yMin = Math.floor(rawMin / niceStep(rawMin)) * niceStep(rawMin);
+    const xMaxRounded = Math.ceil(colData.length / 100) * 100;
+    const scaleX = (i: number) => margin.left + (i / Math.max(xMaxRounded, 1)) * plotW;
+    const scaleY = (v: number) => margin.top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
 
     let svg = `<g>`;
     svg += `<rect x="0" y="0" width="${chartW}" height="${chartH}" fill="#0f172a"/>`;
@@ -760,22 +831,39 @@ export default function ReferenceAnalysis({
 
     const yTicks = 5;
     for (let t = 0; t <= yTicks; t++) {
-      const val = (yMin - yPad) + ((yMax + yPad) - (yMin - yPad)) * (t / yTicks);
+      const val = yMin + (yMax - yMin) * (t / yTicks);
       const y = scaleY(val);
       svg += `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${margin.left + plotW}" y2="${y.toFixed(1)}" stroke="rgba(148,163,184,0.1)"/>`;
-      svg += `<text x="${margin.left - 4}" y="${(y + 3).toFixed(1)}" fill="#94a3b8" font-size="9" font-family="sans-serif" text-anchor="end">${val.toFixed(1)}</text>`;
+      svg += `<text x="${margin.left - 4}" y="${(y + 3).toFixed(1)}" fill="#94a3b8" font-size="9" font-family="sans-serif" text-anchor="end">${Math.round(val)}</text>`;
     }
 
     for (const range of ranges) {
       const x1 = scaleX(range.start);
       const x2 = scaleX(range.end);
-      svg += `<rect x="${Math.min(x1, x2).toFixed(1)}" y="${margin.top}" width="${Math.abs(x2 - x1).toFixed(1)}" height="${plotH}" fill="${range.color}" opacity="${range.opacity}"/>`;
+      svg += `<rect x="${Math.min(x1, x2).toFixed(1)}" y="${margin.top}" width="${Math.abs(x2 - x1).toFixed(1)}" height="${plotH}" fill="${range.color}" fill-opacity="${range.opacity}" stroke="${range.color}" stroke-opacity="0.5"/>`;
     }
 
     svg += `<rect x="${margin.left}" y="${margin.top}" width="${plotW}" height="${plotH}" fill="none" stroke="rgba(148,163,184,0.15)"/>`;
 
     const points = colData.map((v, i) => `${scaleX(i).toFixed(1)},${scaleY(v).toFixed(1)}`).join(' ');
-    svg += `<polyline points="${points}" fill="none" stroke="#ef4444" stroke-width="1.5"/>`;
+    svg += `<polyline points="${points}" fill="none" stroke="#10b981" stroke-width="1.5"/>`;
+
+    const inRange = (idx: number) => ranges.some(r => idx >= r.start && idx <= r.end);
+    let segment: string[] = [];
+    const flushSegment = () => {
+      if (segment.length >= 2) {
+        svg += `<polyline points="${segment.join(' ')}" fill="none" stroke="#3b82f6" stroke-width="2"/>`;
+      }
+      segment = [];
+    };
+    for (let i = 0; i < colData.length; i++) {
+      if (inRange(i)) {
+        segment.push(`${scaleX(i).toFixed(1)},${scaleY(colData[i]).toFixed(1)}`);
+      } else {
+        flushSegment();
+      }
+    }
+    flushSegment();
 
     for (const ext of extrema) {
       if (ext.index >= 0 && ext.index < colData.length) {
@@ -815,17 +903,20 @@ export default function ReferenceAnalysis({
       const gap = 8;
       const totalH = totalColumns * (chartH + gap);
 
-      const yellowRanges = patternRanges.map(r => ({ start: r.start, end: r.end, color: '#fbbf24', opacity: 0.2 }));
+      const topYellowRanges = showTopAreas
+        ? patternRanges.map(r => ({ start: r.start, end: r.end, color: '#fbbf24', opacity: 0.2 }))
+        : [];
+      const bottomYellowRanges = showBottomAreas
+        ? bottomPatternRanges.map(r => ({ start: r.start, end: r.end, color: '#fbbf24', opacity: 0.2 }))
+        : [];
 
       let combinedInner = '';
       let yOff = 0;
       for (let col = 0; col < totalColumns; col++) {
-        const colExtrema = [
-          ...(col === topColumn ? topExtrema : []),
-          ...(allBottomExtrema[col] ?? []),
-        ];
+        const colExtrema = col === topColumn ? topExtrema : (allBottomExtrema[col] ?? []);
+        const ranges = col === topColumn ? topYellowRanges : (col === bottomColumn ? bottomYellowRanges : []);
         const title = `Column ${col + 1}`;
-        const chartSvg = buildChartSvg(allColData[col], title, colExtrema, yellowRanges, chartW, chartH, margin);
+        const chartSvg = buildChartSvg(allColData[col], title, colExtrema, ranges, chartW, chartH, margin);
         combinedInner += `<g transform="translate(0,${yOff})">${chartSvg}</g>`;
         yOff += chartH + gap;
       }
@@ -873,7 +964,7 @@ export default function ReferenceAnalysis({
     } finally {
       setIsExportingImage(false);
     }
-  }, [totalColumns, analyzedColumn, analyzedData, topColumn, topData, topExtrema, bottomColumn, bottomData, sessionId, allBottomExtrema, patternRanges, buildChartSvg]);
+  }, [totalColumns, analyzedColumn, analyzedData, topColumn, topData, topExtrema, bottomColumn, bottomData, sessionId, allBottomExtrema, patternRanges, bottomPatternRanges, showTopAreas, showBottomAreas, buildChartSvg]);
 
   const exportCSV = useCallback(() => {
     const headers = ['index', `col${topColumn + 1}`, `col${bottomColumn + 1}`];
@@ -913,7 +1004,7 @@ export default function ReferenceAnalysis({
       <div ref={chartRef} className="space-y-4">
         <div>
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <p className="text-sm font-medium text-neutral-300">Main Trend:</p>
               <select
                 value={topColumn}
@@ -924,8 +1015,25 @@ export default function ReferenceAnalysis({
                   <option key={col} value={col}>Column {col + 1}</option>
                 ))}
               </select>
+              <span className="text-xs text-blue-400">{refMaxima.length} Max</span>
+              <span className="text-xs text-emerald-400">{refMinima.length} Min</span>
+              <span className="text-xs text-primary-400 font-semibold">{events.length} Events</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowTopAreas(prev => !prev)}
+                className={`p-1 rounded transition-colors ${showTopAreas ? 'bg-yellow-600 text-white hover:bg-yellow-500' : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'}`}
+                title={showTopAreas ? 'Hide Pattern' : 'Show Pattern'}
+              >
+                {showTopAreas ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+              </button>
+              <button
+                onClick={resetTopView}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Reset View"
+              >
+                <Maximize2 className="w-3 h-3" />
+              </button>
               <button
                 onClick={() => setTopChartHeight(prev => Math.min(600, prev + 50))}
                 className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
@@ -1017,6 +1125,13 @@ export default function ReferenceAnalysis({
                   fontSize={10} 
                   domain={topYDomain}
                   allowDataOverflow={true}
+                  tickFormatter={(v: number) => {
+                    const abs = Math.abs(v);
+                    if (abs >= 1000) return v.toFixed(0);
+                    if (abs >= 10) return v.toFixed(1);
+                    return v.toFixed(2);
+                  }}
+                  width={60}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1089,21 +1204,6 @@ export default function ReferenceAnalysis({
           </div>
         </div>
 
-        <div className="mt-3 p-3 bg-neutral-900/50 rounded-xl">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-400">{refMaxima.length} Max</span>
-              <span className="text-xs text-emerald-400">{refMinima.length} Min</span>
-            </div>
-            <button
-              onClick={() => setShowTopAreas(prev => !prev)}
-              className={`px-3 py-1 text-xs rounded ${showTopAreas ? 'bg-yellow-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-            >
-              Pattern {showTopAreas ? 'ON' : 'OFF'}
-            </button>
-          </div>
-        </div>
-
         <div>
           <div className="flex items-center justify-between mb-2 mt-4">
             <div className="flex items-center gap-2">
@@ -1119,7 +1219,45 @@ export default function ReferenceAnalysis({
               </select>
               {isLoading && <span className="text-neutral-500 text-xs">Loading...</span>}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-neutral-400">Min Dist:</span>
+                <input
+                  type="number"
+                  value={bottomMinDistance}
+                  onChange={(e) => setBottomMinDistance(Math.max(1, Number(e.target.value)))}
+                  className="w-16 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+                  min={1}
+                />
+              </div>
+              <button
+                onClick={searchBottomExtrema}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Run Detection"
+              >
+                <Play className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => { if (confirm('Remove all extrema?')) setBottomExtrema([]); }}
+                className="p-1 rounded bg-neutral-800 hover:bg-red-600 text-neutral-300 hover:text-white transition-colors"
+                title="Remove All Extrema"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setShowBottomAreas(prev => !prev)}
+                className={`p-1 rounded transition-colors ${showBottomAreas ? 'bg-yellow-600 text-white hover:bg-yellow-500' : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'}`}
+                title={showBottomAreas ? 'Hide Pattern' : 'Show Pattern'}
+              >
+                {showBottomAreas ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+              </button>
+              <button
+                onClick={resetBottomView}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Reset View"
+              >
+                <Maximize2 className="w-3 h-3" />
+              </button>
               <button
                 onClick={() => setBottomChartHeight(prev => Math.min(600, prev + 50))}
                 className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
@@ -1227,6 +1365,13 @@ export default function ReferenceAnalysis({
                   fontSize={10} 
                   domain={bottomYDomain}
                   allowDataOverflow={true}
+                  tickFormatter={(v: number) => {
+                    const abs = Math.abs(v);
+                    if (abs >= 1000) return v.toFixed(0);
+                    if (abs >= 10) return v.toFixed(1);
+                    return v.toFixed(2);
+                  }}
+                  width={60}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1327,13 +1472,13 @@ export default function ReferenceAnalysis({
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-400">Pattern:</span>
                 <button
-                  onClick={() => setSelectedPattern('low-high-low')}
+                  onClick={() => { setSelectedPattern('low-high-low'); onPatternChange([0, 1, 0]); }}
                   className={`px-3 py-1 text-xs rounded ${selectedPattern === 'low-high-low' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
                 >
                   Low → High → Low
                 </button>
                 <button
-                  onClick={() => setSelectedPattern('high-low-high')}
+                  onClick={() => { setSelectedPattern('high-low-high'); onPatternChange([1, 0, 1]); }}
                   className={`px-3 py-1 text-xs rounded ${selectedPattern === 'high-low-high' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
                 >
                   High → Low → High
@@ -1390,12 +1535,6 @@ export default function ReferenceAnalysis({
                 <span className="text-xs text-blue-400">{bottomMaxima.length} Max</span>
                 <span className="text-xs text-emerald-400">{bottomMinima.length} Min</span>
               </div>
-              <button
-                onClick={() => setShowBottomAreas(prev => !prev)}
-                className={`px-3 py-1 text-xs rounded ${showBottomAreas ? 'bg-yellow-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
-              >
-                Pattern {showBottomAreas ? 'ON' : 'OFF'}
-              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

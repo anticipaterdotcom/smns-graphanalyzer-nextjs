@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
-import { Image, Plus, Minus, MousePointer, X } from 'lucide-react';
+import { Image, Plus, Minus, MousePointer, X, Maximize2, Trash2, Play, Eye, EyeOff } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceDot,
+  ReferenceArea,
 } from 'recharts';
 import { Extremum, PatternEvent, exportAllColumns } from '@/lib/api';
 import { Download } from 'lucide-react';
@@ -31,6 +32,11 @@ interface GraphChartProps {
   onRemoveExtremum?: (index: number) => void;
   epsilon?: number;
   onEpsilonChange?: (value: number) => void;
+  minDistance?: number;
+  onMinDistanceChange?: (value: number) => void;
+  onClearExtrema?: () => void;
+  onRunDetection?: () => void;
+  detectPatterns?: boolean;
   highlightedExtremumIndex?: number | null;
   events?: PatternEvent[];
   onPatternChange?: (pattern: number[]) => void;
@@ -58,6 +64,11 @@ export default function GraphChart({
   onRemoveExtremum,
   epsilon = 20,
   onEpsilonChange,
+  minDistance,
+  onMinDistanceChange,
+  onClearExtrema,
+  onRunDetection,
+  detectPatterns = true,
   highlightedExtremumIndex,
   events = [],
   onPatternChange,
@@ -79,6 +90,7 @@ export default function GraphChart({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{x: number, y: number, xCenter: number, yCenter: number} | null>(null);
   const [chartHeight, setChartHeight] = useState(propChartHeight || 400);
+  const [showPattern, setShowPattern] = useState(true);
   
   useEffect(() => {
     if (propChartHeight !== undefined) {
@@ -201,18 +213,23 @@ export default function GraphChart({
   const enhancedChartData = useMemo(() => {
     return chartData.map((point) => ({
       ...point,
-      inPattern: isInPatternRange(point.index) ? point.value : null,
+      inPattern: showPattern && isInPatternRange(point.index) ? point.value : null,
       highlighted: isInHighlightRange(point.index) ? point.value : null,
     }));
-  }, [chartData, isInPatternRange, isInHighlightRange]);
+  }, [chartData, isInPatternRange, isInHighlightRange, showPattern]);
 
   const getXAxisConfig = useMemo(() => {
     const len = data.length;
+    const isDefaultView = xCenter === null && xZoom === 1;
     const dataCenter = len / 2;
     const center = xCenter ?? dataCenter;
     const range = len / xZoom;
-    const xMin = Math.max(1, center - range / 2);
-    const xMax = Math.min(len, center + range / 2);
+    let xMin = Math.max(1, center - range / 2);
+    let xMax = Math.min(len, center + range / 2);
+    if (isDefaultView) {
+      xMin = 0;
+      xMax = Math.ceil(len / 100) * 100;
+    }
     
     const visibleRange = xMax - xMin;
     let step: number;
@@ -242,15 +259,36 @@ export default function GraphChart({
       if (data[i] > maxVal) maxVal = data[i];
       if (data[i] < minVal) minVal = data[i];
     }
+    const isDefaultView = yCenter === null && yZoom === 1;
     const dataCenter = (maxVal + minVal) / 2;
     const center = yCenter ?? dataCenter;
     const range = (maxVal - minVal) / yZoom;
-    const yMax = center + range / 2;
-    const yMin = center - range / 2;
+    let yMax = center + range / 2;
+    let yMin = center - range / 2;
+    if (isDefaultView) {
+      const niceStep = (v: number) => {
+        const abs = Math.abs(v);
+        if (abs >= 1000) return 100;
+        if (abs >= 100) return 10;
+        if (abs >= 10) return 5;
+        return 1;
+      };
+      const stepMax = niceStep(maxVal);
+      const stepMin = niceStep(minVal);
+      yMax = Math.ceil(maxVal / stepMax) * stepMax;
+      yMin = Math.floor(minVal / stepMin) * stepMin;
+    }
     const domain: [number, number] = [yMin, yMax];
     yDomainRef.current = domain;
     return domain;
   }, [data, yZoom, yCenter]);
+
+  const resetView = useCallback(() => {
+    setYZoom(1);
+    setYCenter(null);
+    setXZoom(1);
+    setXCenter(null);
+  }, []);
 
 
   const [isExporting, setIsExporting] = useState(false);
@@ -370,6 +408,41 @@ export default function GraphChart({
             Minima ({minima.length})
           </span>
           <div className="flex items-center gap-1">
+            {onRunDetection && (
+              <button
+                onClick={onRunDetection}
+                className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                title="Run Detection"
+              >
+                <Play className="w-4 h-4" />
+              </button>
+            )}
+            {onClearExtrema && (
+              <button
+                onClick={() => {
+                  if (confirm('Remove all extrema?')) onClearExtrema();
+                }}
+                className="p-1 rounded bg-neutral-800 hover:bg-red-600 text-neutral-300 hover:text-white transition-colors"
+                title="Remove All Extrema"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={() => setShowPattern(p => !p)}
+              disabled={!detectPatterns}
+              className={`p-1 rounded transition-colors ${!detectPatterns ? 'bg-neutral-900 text-neutral-600 cursor-not-allowed' : showPattern ? 'bg-yellow-600 text-white hover:bg-yellow-500' : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'}`}
+              title={!detectPatterns ? 'Pattern detection disabled' : showPattern ? 'Hide Pattern' : 'Show Pattern'}
+            >
+              {showPattern ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={resetView}
+              className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+              title="Reset View"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setChartHeight(prev => Math.min(800, prev + 50))}
               className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
@@ -467,11 +540,18 @@ export default function GraphChart({
               ticks={getXAxisConfig.ticks}
               allowDataOverflow={true}
             />
-            <YAxis 
-              stroke="#64748b" 
-              fontSize={12} 
+            <YAxis
+              stroke="#64748b"
+              fontSize={12}
               domain={getYAxisDomain}
               allowDataOverflow={true}
+              tickFormatter={(v: number) => {
+                const abs = Math.abs(v);
+                if (abs >= 1000) return v.toFixed(0);
+                if (abs >= 10) return v.toFixed(1);
+                return v.toFixed(2);
+              }}
+              width={60}
             />
             <Tooltip
               contentStyle={{
@@ -483,6 +563,17 @@ export default function GraphChart({
               formatter={(value: number) => [value.toFixed(4), 'Value']}
               labelFormatter={(label) => `Index: ${label}`}
             />
+            {showPattern && patternRanges.map((range, i) => (
+              <ReferenceArea
+                key={`pattern-${i}`}
+                x1={range.start}
+                x2={range.end}
+                fill="#fbbf24"
+                fillOpacity={0.2}
+                stroke="#fbbf24"
+                strokeOpacity={0.5}
+              />
+            ))}
             <Line
               type="monotone"
               dataKey="value"
@@ -615,6 +706,18 @@ export default function GraphChart({
                 max={100}
               />
             </div>
+            {onMinDistanceChange && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-400">Min Distance:</span>
+                <input
+                  type="number"
+                  value={minDistance ?? 95}
+                  onChange={(e) => onMinDistanceChange(Number(e.target.value))}
+                  className="w-20 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+                  min={1}
+                />
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-sm text-neutral-400">Extrema:</span>
               <span className="text-xs text-blue-400">{maxima.length} Max</span>
