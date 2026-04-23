@@ -254,17 +254,36 @@ export default function MeanTrendsAnalyzer({
 
   const rawChartData = useMemo(() => {
     if (!data) return [];
-    const maxLen = Math.max(...data.raw_segments.map(s => s.length));
+    const smoothBox = (seg: number[]): number[] => {
+      if (seg.length < 7) return seg;
+      const win = Math.max(5, (Math.round(seg.length * 0.15) | 1));
+      const half = Math.floor(win / 2);
+      const out = new Array(seg.length);
+      for (let i = 0; i < seg.length; i++) {
+        let sum = 0;
+        let count = 0;
+        for (let k = -half; k <= half; k++) {
+          const j = i + k;
+          if (j >= 0 && j < seg.length) { sum += seg[j]; count++; }
+        }
+        out[i] = sum / count;
+      }
+      return out;
+    };
+    const segments = interpolation === 'spline'
+      ? data.raw_segments.map(smoothBox)
+      : data.raw_segments;
+    const maxLen = Math.max(...segments.map(s => s.length));
     const result: Record<string, number | undefined>[] = [];
     for (let i = 0; i < maxLen; i++) {
       const point: Record<string, number | undefined> = { index: i + 1 };
-      data.raw_segments.forEach((seg, j) => {
+      segments.forEach((seg, j) => {
         point[`cycle${j}`] = i < seg.length ? seg[i] : undefined;
       });
       result.push(point);
     }
     return result;
-  }, [data]);
+  }, [data, interpolation]);
 
   const exportImage = useCallback(async (format: 'png' | 'svg') => {
     if (!chartRef.current) return;
