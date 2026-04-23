@@ -47,12 +47,43 @@ export function getFailureTickets(): FailureTicket[] {
   } catch { return []; }
 }
 
+type SessionRecovery = () => Promise<string | null>;
+let sessionRecovery: SessionRecovery | null = null;
+export function registerSessionRecovery(fn: SessionRecovery | null) {
+  sessionRecovery = fn;
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error?.response?.status;
     const url = error?.config?.url;
     const detail = error?.response?.data?.detail ?? error?.response?.data;
+
+    const isSessionMissing = status === 404 && typeof detail === 'string' && /session not found/i.test(detail);
+    const cfg = error?.config;
+    if (isSessionMissing && sessionRecovery && cfg && !cfg.__sessionRetried) {
+      try {
+        const newSid = await sessionRecovery();
+        if (newSid) {
+          cfg.__sessionRetried = true;
+          if (cfg.data) {
+            try {
+              const body = typeof cfg.data === 'string' ? JSON.parse(cfg.data) : cfg.data;
+              if (body && typeof body === 'object' && 'session_id' in body) {
+                body.session_id = newSid;
+                cfg.data = JSON.stringify(body);
+              }
+            } catch { /* ignore */ }
+          }
+          if (cfg.url) {
+            cfg.url = cfg.url.replace(/\/api\/session\/[0-9a-f-]+/i, `/api/session/${newSid}`);
+          }
+          return api.request(cfg);
+        }
+      } catch { /* fall through to normal error handling */ }
+    }
+
     const ticket = logFailureTicket({
       url,
       status,

@@ -21,6 +21,7 @@ import {
   checkSession,
   loadSavepoint,
   getSavepoint,
+  registerSessionRecovery,
   Extremum,
   PatternEvent,
   StickFigureData,
@@ -163,6 +164,20 @@ export default function Home() {
     };
     restoreFromHistory();
   }, []);
+
+  useEffect(() => {
+    registerSessionRecovery(async () => {
+      if (!rawData) return null;
+      try {
+        const result = await loadSavepoint(rawData, extrema, currentFrequency || 100);
+        setSessionId(result.session_id);
+        return result.session_id;
+      } catch {
+        return null;
+      }
+    });
+    return () => registerSessionRecovery(null);
+  }, [rawData, extrema, currentFrequency]);
 
   const handleFileUpload = useCallback(async (file: File, delimiter: string, trimZeros: boolean) => {
     setIsLoading(true);

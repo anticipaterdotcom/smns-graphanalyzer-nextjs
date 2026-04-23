@@ -70,25 +70,6 @@ export default function MeanTrendsAnalyzer({
       );
       setData(result);
     } catch (err) {
-      // Gracefully fall back to linear when spline endpoint errors (e.g. 404 on prod)
-      if (interpolation === 'spline') {
-        try {
-          const fallback = await getMeanTrendExtended(
-            sessionId,
-            pattern,
-            column,
-            undefined,
-            lengthMode,
-            'linear'
-          );
-          setData(fallback);
-          setError('Spline not available on server — using linear interpolation.');
-          return;
-        } catch (err2) {
-          setError(err2 instanceof Error ? err2.message : 'Failed to load trend data');
-          return;
-        }
-      }
       setError(err instanceof Error ? err.message : 'Failed to load trend data');
     } finally {
       setIsLoading(false);
