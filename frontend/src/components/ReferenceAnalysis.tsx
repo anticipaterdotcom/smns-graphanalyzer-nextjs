@@ -1220,16 +1220,6 @@ export default function ReferenceAnalysis({
               {isLoading && <span className="text-neutral-500 text-xs">Loading...</span>}
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-neutral-400">Min Dist:</span>
-                <input
-                  type="number"
-                  value={bottomMinDistance}
-                  onChange={(e) => setBottomMinDistance(Math.max(1, Number(e.target.value)))}
-                  className="w-16 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
-                  min={1}
-                />
-              </div>
               <button
                 onClick={searchBottomExtrema}
                 className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
@@ -1458,16 +1448,6 @@ export default function ReferenceAnalysis({
 
           <div className="mt-3 p-3 bg-neutral-900/50 rounded-xl">
             <div className="flex flex-wrap items-center gap-4 mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-neutral-400">Min Distance:</span>
-                <input
-                  type="number"
-                  value={bottomMinDistance}
-                  onChange={(e) => setBottomMinDistance(Math.max(1, Number(e.target.value)))}
-                  className="w-20 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
-                  min={1}
-                />
-              </div>
 
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-400">Pattern:</span>
@@ -1529,6 +1509,16 @@ export default function ReferenceAnalysis({
                   className="w-16 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
                   min={1}
                   max={100}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-400">Min Distance:</span>
+                <input
+                  type="number"
+                  value={bottomMinDistance}
+                  onChange={(e) => setBottomMinDistance(Math.max(1, Number(e.target.value)))}
+                  className="w-20 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
+                  min={1}
                 />
               </div>
               <div className="flex items-center gap-2">
