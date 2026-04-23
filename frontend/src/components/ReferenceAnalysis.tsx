@@ -424,10 +424,7 @@ export default function ReferenceAnalysis({
     const loadTopData = async () => {
       if (topColumn === analyzedColumn) {
         setTopData(analyzedData);
-        if (columnChanged) {
-          const stored = allTopExtrema[topColumn];
-          setTopExtrema(stored && stored.length > 0 ? stored : mainExtrema);
-        }
+        setTopExtrema(mainExtrema);
         return;
       }
       try {
@@ -616,6 +613,10 @@ export default function ReferenceAnalysis({
 
   const addTopExtremum = useCallback((clickIndex: number, type: 'max' | 'min') => {
     if (topData.length === 0) return;
+    if (topColumn === analyzedColumn) {
+      onAddExtremum(clickIndex, type, epsilon);
+      return;
+    }
     let actualIdx: number;
     if (epsilon === 0) {
       actualIdx = Math.max(0, Math.min(clickIndex, topData.length - 1));
@@ -637,9 +638,13 @@ export default function ReferenceAnalysis({
       const filtered = prev.filter(e => e.index !== actualIdx);
       return [...filtered, newExt].sort((a, b) => a.index - b.index);
     });
-  }, [topData, epsilon]);
+  }, [topData, epsilon, topColumn, analyzedColumn, onAddExtremum]);
 
   const removeTopExtremum = useCallback((targetIndex: number) => {
+    if (topColumn === analyzedColumn) {
+      onRemoveExtremum(targetIndex);
+      return;
+    }
     setTopExtrema(prev => {
       const exact = prev.find(e => e.index === targetIndex);
       if (exact) return prev.filter(e => e.index !== targetIndex);
@@ -650,7 +655,7 @@ export default function ReferenceAnalysis({
       }
       return prev;
     });
-  }, []);
+  }, [topColumn, analyzedColumn, onRemoveExtremum]);
 
   const handleTopChartClick = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
