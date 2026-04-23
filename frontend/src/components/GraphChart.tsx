@@ -711,8 +711,18 @@ export default function GraphChart({
                 <span className="text-sm text-neutral-400">Min Distance:</span>
                 <input
                   type="number"
-                  value={minDistance ?? 95}
-                  onChange={(e) => onMinDistanceChange(Number(e.target.value))}
+                  defaultValue={minDistance ?? 95}
+                  key={minDistance ?? 95}
+                  onBlur={(e) => {
+                    const v = Number(e.target.value);
+                    if (v === (minDistance ?? 95) || !Number.isFinite(v) || v < 1) return;
+                    if (confirm('Changing Min Distance will reset all extrema (including custom points). Continue?')) {
+                      onMinDistanceChange(v);
+                    } else {
+                      e.target.value = String(minDistance ?? 95);
+                    }
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                   className="w-20 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
                   min={1}
                 />

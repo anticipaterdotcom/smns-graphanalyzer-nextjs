@@ -1515,8 +1515,18 @@ export default function ReferenceAnalysis({
                 <span className="text-sm text-neutral-400">Min Distance:</span>
                 <input
                   type="number"
-                  value={bottomMinDistance}
-                  onChange={(e) => setBottomMinDistance(Math.max(1, Number(e.target.value)))}
+                  defaultValue={bottomMinDistance}
+                  key={bottomMinDistance}
+                  onBlur={(e) => {
+                    const v = Math.max(1, Number(e.target.value));
+                    if (v === bottomMinDistance || !Number.isFinite(v)) return;
+                    if (confirm('Changing Min Distance will reset all extrema (including custom points). Continue?')) {
+                      setBottomMinDistance(v);
+                    } else {
+                      e.target.value = String(bottomMinDistance);
+                    }
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                   className="w-20 px-2 py-1 bg-neutral-800 border border-white/10 rounded text-white text-xs"
                   min={1}
                 />
