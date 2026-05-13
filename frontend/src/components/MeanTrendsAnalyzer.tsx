@@ -82,6 +82,22 @@ export default function MeanTrendsAnalyzer({
 
   const referenceAvailable = referenceExtremaForColumn.length >= 3;
 
+  // When the Reference panel is the cycle source we should also inherit its
+  // pattern (LHL / HLH) instead of the main plot's, otherwise switching the
+  // divider in Reference wouldn't show up here. The Reference panel writes
+  // its current pattern to `ref-pattern:${sessionId}`; we read it back here.
+  const referencePattern = useMemo<number[] | null>(() => {
+    if (!sessionId || typeof window === 'undefined') return null;
+    try {
+      const stored = localStorage.getItem(`ref-pattern:${sessionId}`);
+      if (stored === 'high-low-high') return [1, 0, 1];
+      if (stored === 'low-high-low') return [0, 1, 0];
+      return null;
+    } catch { return null; }
+    // cycleSource is in deps so the lookup refreshes when the user toggles
+    // the source -- localStorage may have changed in the Reference panel.
+  }, [sessionId, cycleSource]);
+
   const loadFromSession = useCallback(async () => {
     if (!sessionId || events.length < 2) return;
 
@@ -90,11 +106,12 @@ export default function MeanTrendsAnalyzer({
     setCsvData(null);
 
     const useReference = cycleSource === 'reference' && referenceAvailable;
+    const activePattern = useReference && referencePattern ? referencePattern : pattern;
 
     try {
       const result = await getMeanTrendExtended(
         sessionId,
-        pattern,
+        activePattern,
         selectedColumn,
         undefined,
         lengthMode,
@@ -120,14 +137,15 @@ export default function MeanTrendsAnalyzer({
       // eslint-disable-next-line no-console
       console.error('[mean-trends]', {
         status, url, detail,
-        sessionId, pattern, column: selectedColumn, lengthMode, interpolation,
+        sessionId, pattern: activePattern, column: selectedColumn, lengthMode, interpolation,
         cycleSource, usedReferenceExtrema: useReference ? referenceExtremaForColumn.length : 0,
+        inheritedPattern: useReference && referencePattern ? referencePattern : null,
       });
       setError(message);
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation, cycleSource, referenceAvailable, referenceExtremaForColumn, frequency]);
+  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation, cycleSource, referenceAvailable, referenceExtremaForColumn, referencePattern, frequency]);
 
 
   useEffect(() => {
@@ -511,7 +529,7 @@ export default function MeanTrendsAnalyzer({
         </div>
         <span className="text-[11px] text-neutral-500">
           {cycleSource === 'reference' && referenceAvailable
-            ? 'Cycles are segmented from your manual edits on this column.'
+            ? `Cycles segmented from your manual edits on this column${referencePattern ? ` using the Reference pattern (${referencePattern[1] === 0 ? 'HLH' : 'LHL'})` : ''}.`
             : 'Cycles are segmented from the main plot\'s extrema.'}
         </span>
       </div>

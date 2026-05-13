@@ -118,12 +118,25 @@ export default function ReferenceAnalysis({
   const topChartRef = useRef<HTMLDivElement>(null);
   const bottomChartRef = useRef<HTMLDivElement>(null);
   
-  // Reference pattern is independent from the main plot's pattern. We seed
-  // from currentPattern once so the first render mirrors the main view, but
-  // afterwards toggling here must not touch the main plot's detection.
-  const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>(
-    currentPattern && currentPattern[1] === 0 ? 'high-low-high' : 'low-high-low'
-  );
+  // Reference pattern is independent from the main plot's pattern (see the
+  // earlier decoupling fix) and is *also* shared with the Mean Trends panel:
+  // when the user picks "Reference" as the cycle source there, it inherits
+  // whichever pattern this panel was last set to. We persist via localStorage
+  // so the inheritance survives a panel close, a remount, or a navigation
+  // away.
+  const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>(() => {
+    if (typeof window !== 'undefined' && sessionId) {
+      try {
+        const stored = localStorage.getItem(`ref-pattern:${sessionId}`);
+        if (stored === 'low-high-low' || stored === 'high-low-high') return stored;
+      } catch { /* ignore */ }
+    }
+    return currentPattern && currentPattern[1] === 0 ? 'high-low-high' : 'low-high-low';
+  });
+  useEffect(() => {
+    if (!sessionId || typeof window === 'undefined') return;
+    try { localStorage.setItem(`ref-pattern:${sessionId}`, selectedPattern); } catch { /* ignore */ }
+  }, [selectedPattern, sessionId]);
   const [refPatternEvents, setRefPatternEvents] = useState<RefPatternEvent[]>([]);
   const frequency = propFrequency;
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
