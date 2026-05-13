@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as Sentry from '@sentry/nextjs';
+import * as local from './localApi';
 
 const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || (isProduction ? '' : 'http://localhost:8000');
@@ -7,6 +8,41 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || (isProduction ? '' : 'http:/
 const api = axios.create({
   baseURL: API_BASE,
 });
+
+// ---------- runtime mode switch ----------
+//
+// The app now ships with a complete in-browser implementation (LocalAnalyzer +
+// localApi) so the PWA build works fully offline. A small runtime flag chooses
+// between the two: 'local' runs everything in the browser, 'remote' POSTs to
+// the Python backend. Default is 'local' because that is what the offline /
+// installable build needs. Flip via `setApiMode('remote')` or by setting
+// localStorage['api-mode'] = 'remote' in DevTools.
+
+export type ApiMode = 'local' | 'remote';
+const API_MODE_KEY = 'api-mode';
+
+function readStoredMode(): ApiMode | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = localStorage.getItem(API_MODE_KEY);
+    if (v === 'local' || v === 'remote') return v;
+  } catch { /* ignore */ }
+  return null;
+}
+
+const envDefault: ApiMode =
+  (process.env.NEXT_PUBLIC_API_MODE === 'remote' ? 'remote' : 'local');
+
+export function getApiMode(): ApiMode {
+  return readStoredMode() ?? envDefault;
+}
+
+export function setApiMode(mode: ApiMode): void {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(API_MODE_KEY, mode); } catch { /* ignore */ }
+}
+
+function useLocal(): boolean { return getApiMode() === 'local'; }
 
 export interface FailureTicket {
   id: string;
@@ -154,6 +190,7 @@ export interface PatternEvent {
 }
 
 export async function loadDefaultData(delimiter: string = ';', trimZeros: boolean = false): Promise<UploadResponse> {
+  if (useLocal()) return local.localLoadDefaultData();
   const params = new URLSearchParams({ delimiter, trim_zeros: String(trimZeros) });
   const response = await api.get(`/api/load-default?${params}`);
   return response.data;
@@ -169,6 +206,7 @@ export interface PreviewResponse {
 }
 
 export async function previewFile(file: File, delimiter: string = ';', trimZeros: boolean = false): Promise<PreviewResponse> {
+  if (useLocal()) return local.localPreviewFile(file, delimiter, trimZeros);
   const formData = new FormData();
   formData.append('file', file);
   const params = new URLSearchParams({ delimiter, trim_zeros: String(trimZeros) });
@@ -177,6 +215,7 @@ export async function previewFile(file: File, delimiter: string = ';', trimZeros
 }
 
 export async function uploadFile(file: File, delimiter: string = ';', trimZeros: boolean = false): Promise<UploadResponse> {
+  if (useLocal()) return local.localUploadFile(file, delimiter, trimZeros);
   const formData = new FormData();
   formData.append('file', file);
   const params = new URLSearchParams({ delimiter, trim_zeros: String(trimZeros) });
@@ -190,6 +229,7 @@ export async function analyzeData(
   minDistance: number,
   frequency: number
 ): Promise<AnalyzeResponse> {
+  if (useLocal()) return local.localAnalyzeData(sessionId, column, minDistance, frequency);
   const response = await api.post('/api/analyze', {
     session_id: sessionId,
     column,
@@ -205,6 +245,7 @@ export async function addExtremum(
   extremumType: string = 'max',
   epsilon: number = 20
 ): Promise<Extremum> {
+  if (useLocal()) return local.localAddExtremum(sessionId, index, extremumType, epsilon);
   const response = await api.post('/api/extremum/add', {
     session_id: sessionId,
     index,
@@ -219,6 +260,7 @@ export async function removeExtremum(
   index: number,
   tolerance: number = 15
 ): Promise<{ success: boolean }> {
+  if (useLocal()) return local.localRemoveExtremum(sessionId, index, tolerance);
   const response = await api.post('/api/extremum/remove', {
     session_id: sessionId,
     index,
@@ -231,6 +273,7 @@ export async function getPatternEvents(
   sessionId: string,
   pattern: number[]
 ): Promise<{ events: PatternEvent[]; count: number }> {
+  if (useLocal()) return local.localGetPatternEvents(sessionId, pattern);
   const response = await api.post('/api/pattern/events', {
     session_id: sessionId,
     pattern,
@@ -243,6 +286,7 @@ export async function getPatternEventsFromExtrema(
   pattern: number[],
   frequency: number
 ): Promise<{ events: PatternEvent[]; count: number }> {
+  if (useLocal()) return local.localGetPatternEventsFromExtrema(extrema, pattern, frequency);
   const response = await api.post('/api/pattern/events-from-extrema', {
     extrema,
     pattern,
@@ -255,6 +299,7 @@ export async function getColumnData(
   sessionId: string,
   column: number
 ): Promise<{ data: number[]; length: number }> {
+  if (useLocal()) return local.localGetColumnData(sessionId, column);
   const response = await api.post('/api/data/column', {
     session_id: sessionId,
     column,
@@ -263,6 +308,7 @@ export async function getColumnData(
 }
 
 export async function getExtrema(sessionId: string): Promise<{ extrema: Extremum[] }> {
+  if (useLocal()) return local.localGetExtrema(sessionId);
   const response = await api.get(`/api/session/${sessionId}/extrema`);
   return response.data;
 }
@@ -271,6 +317,7 @@ export async function exportEvents(
   sessionId: string,
   pattern: number[]
 ): Promise<{ parameters: PatternEvent[] }> {
+  if (useLocal()) return local.localExportEvents(sessionId, pattern);
   const response = await api.post('/api/export/events', {
     session_id: sessionId,
     pattern,
@@ -309,6 +356,7 @@ export async function getStickFigureData(
   frameRate: number = 24,
   column?: number
 ): Promise<StickFigureData> {
+  if (useLocal()) return local.localGetStickFigureData(sessionId, connections, pointLabels, frameRate, column);
   const response = await api.post('/api/stick-figure/data', {
     session_id: sessionId,
     connections,
@@ -343,6 +391,7 @@ export async function getMeanTrend(
   column: number,
   targetLength?: number
 ): Promise<MeanTrendResponse> {
+  if (useLocal()) return local.localGetMeanTrend(sessionId, pattern, column, targetLength);
   const response = await api.post('/api/mean-trend', {
     session_id: sessionId,
     pattern,
@@ -362,6 +411,9 @@ export async function getMeanTrendExtended(
   cycleExtrema?: Extremum[],
   frequency?: number,
 ): Promise<MeanTrendExtendedResponse> {
+  if (useLocal()) return local.localGetMeanTrendExtended(
+    sessionId, pattern, column, targetLength, lengthMode, interpolationMethod, cycleExtrema, frequency,
+  );
   const response = await api.post('/api/mean-trend-extended', {
     session_id: sessionId,
     pattern,
@@ -390,6 +442,7 @@ export async function exportAllColumns(
   minDistance: number = 10,
   frequency: number = 100
 ): Promise<AllColumnsExportResult> {
+  if (useLocal()) return local.localExportAllColumns(sessionId, pattern, minDistance, frequency);
   const response = await api.post('/api/export/all-columns', {
     session_id: sessionId,
     pattern,
@@ -403,6 +456,7 @@ export async function restoreState(
   sessionId: string,
   extrema: Extremum[]
 ): Promise<{ success: boolean; count: number }> {
+  if (useLocal()) return local.localRestoreState(sessionId, extrema);
   const response = await api.post('/api/state/restore', {
     session_id: sessionId,
     extrema: extrema.map(e => ({
@@ -419,6 +473,7 @@ export async function loadSavepoint(
   extrema: Extremum[],
   frequency: number = 100.0
 ): Promise<{ session_id: string }> {
+  if (useLocal()) return local.localLoadSavepoint(rawData, extrema, frequency);
   const response = await api.post('/api/savepoint/load', {
     raw_data: rawData,
     extrema: extrema.map(e => ({
@@ -432,6 +487,7 @@ export async function loadSavepoint(
 }
 
 export async function checkSession(sessionId: string): Promise<boolean> {
+  if (useLocal()) return local.localCheckSession(sessionId);
   try {
     await api.get(`/api/session/${sessionId}`);
     return true;
@@ -443,6 +499,7 @@ export async function checkSession(sessionId: string): Promise<boolean> {
 export async function getSavepoint(
   sessionId: string
 ): Promise<{ raw_data: number[][]; extrema: { value: number; index: number; type: number }[]; frequency: number }> {
+  if (useLocal()) return local.localGetSavepoint(sessionId);
   const response = await api.post('/api/savepoint/save', {
     session_id: sessionId,
   });
