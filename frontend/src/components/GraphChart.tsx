@@ -474,6 +474,9 @@ export default function GraphChart({
         style={{ height: `${chartHeight}px` }}
         className={`rounded-xl bg-neutral-900/50 p-4 ${editMode && editAction === 'remove' ? 'cursor-pointer ring-2 ring-red-500/50' : editMode ? 'cursor-crosshair ring-2 ring-primary-500/50' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         onMouseDown={(e) => {
+          // Don't start a pan while the user is editing extrema -- the tiny
+          // mouse movement during a click otherwise jiggles the viewport.
+          if (editMode) return;
           const rect = chartRef.current?.getBoundingClientRect();
           if (!rect) return;
           const [yMin, yMax] = getYAxisDomain;
@@ -487,7 +490,7 @@ export default function GraphChart({
           });
         }}
         onMouseMove={(e) => {
-          if (!isDragging || !dragStart) return;
+          if (!isDragging || !dragStart || editMode) return;
           const rect = chartRef.current?.getBoundingClientRect();
           if (!rect) return;
           const deltaY = e.clientY - dragStart.y;
