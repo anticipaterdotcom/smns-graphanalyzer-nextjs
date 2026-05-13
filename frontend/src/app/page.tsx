@@ -719,7 +719,6 @@ export default function Home() {
                   onRemoveExtremum={handleRemoveExtremum}
                   epsilon={epsilon}
                   onEpsilonChange={setEpsilon}
-                  onPatternChange={handlePatternSelect}
                   currentPattern={selectedPattern}
                   frequency={currentFrequency}
                   topChartHeight={topChartHeight}

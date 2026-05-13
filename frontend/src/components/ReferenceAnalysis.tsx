@@ -60,7 +60,6 @@ interface ReferenceAnalysisProps {
   onRemoveExtremum: (index: number) => void;
   epsilon: number;
   onEpsilonChange: (value: number) => void;
-  onPatternChange: (pattern: number[]) => void;
   currentPattern: number[];
   frequency: number;
   topChartHeight?: number;
@@ -91,7 +90,6 @@ export default function ReferenceAnalysis({
   onRemoveExtremum,
   epsilon,
   onEpsilonChange,
-  onPatternChange,
   currentPattern,
   frequency: propFrequency,
   topChartHeight: propTopChartHeight,
@@ -120,12 +118,12 @@ export default function ReferenceAnalysis({
   const topChartRef = useRef<HTMLDivElement>(null);
   const bottomChartRef = useRef<HTMLDivElement>(null);
   
+  // Reference pattern is independent from the main plot's pattern. We seed
+  // from currentPattern once so the first render mirrors the main view, but
+  // afterwards toggling here must not touch the main plot's detection.
   const [selectedPattern, setSelectedPattern] = useState<'low-high-low' | 'high-low-high'>(
     currentPattern && currentPattern[1] === 0 ? 'high-low-high' : 'low-high-low'
   );
-  useEffect(() => {
-    setSelectedPattern(currentPattern && currentPattern[1] === 0 ? 'high-low-high' : 'low-high-low');
-  }, [currentPattern]);
   const [refPatternEvents, setRefPatternEvents] = useState<RefPatternEvent[]>([]);
   const frequency = propFrequency;
   const [localHighlightIndex, setLocalHighlightIndex] = useState<number | null>(null);
@@ -1483,13 +1481,13 @@ export default function ReferenceAnalysis({
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-400">Pattern:</span>
                 <button
-                  onClick={() => { setSelectedPattern('low-high-low'); onPatternChange([0, 1, 0]); }}
+                  onClick={() => setSelectedPattern('low-high-low')}
                   className={`px-3 py-1 text-xs rounded ${selectedPattern === 'low-high-low' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
                 >
                   Low → High → Low
                 </button>
                 <button
-                  onClick={() => { setSelectedPattern('high-low-high'); onPatternChange([1, 0, 1]); }}
+                  onClick={() => setSelectedPattern('high-low-high')}
                   className={`px-3 py-1 text-xs rounded ${selectedPattern === 'high-low-high' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400'}`}
                 >
                   High → Low → High
