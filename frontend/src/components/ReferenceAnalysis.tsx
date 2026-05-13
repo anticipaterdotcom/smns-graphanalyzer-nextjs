@@ -1319,6 +1319,9 @@ export default function ReferenceAnalysis({
               }
             }}
             onMouseDown={(e) => {
+              // Don't start a pan while the user is editing extrema -- the tiny
+              // mouse movement during a click otherwise jiggles the viewport.
+              if (bottomEditMode) return;
               const [yMin, yMax] = bottomYDomain;
               const { bottomMin, bottomMax } = getXAxisConfig;
               setBottomIsDragging(true);
@@ -1330,7 +1333,7 @@ export default function ReferenceAnalysis({
               });
             }}
             onMouseMove={(e) => {
-              if (!bottomIsDragging || !bottomDragStart) return;
+              if (!bottomIsDragging || !bottomDragStart || bottomEditMode) return;
               const rect = e.currentTarget.getBoundingClientRect();
               const deltaY = e.clientY - bottomDragStart.y;
               const deltaX = e.clientX - bottomDragStart.x;
