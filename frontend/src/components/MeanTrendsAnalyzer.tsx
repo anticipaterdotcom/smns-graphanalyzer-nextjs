@@ -58,11 +58,11 @@ export default function MeanTrendsAnalyzer({
 
   const loadFromSession = useCallback(async () => {
     if (!sessionId || events.length < 2) return;
-    
+
     setIsLoading(true);
     setError(null);
     setCsvData(null);
-    
+
     try {
       const result = await getMeanTrendExtended(
         sessionId,
@@ -74,7 +74,25 @@ export default function MeanTrendsAnalyzer({
       );
       setData(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load trend data');
+      // Surface the real backend detail (which endpoint, which session) instead
+      // of axios' generic "Request failed with status code 404".
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = err as any;
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      const url = e?.config?.url;
+      const parts: string[] = [];
+      parts.push('Mean trends request failed');
+      if (status) parts.push(`(HTTP ${status})`);
+      if (url) parts.push(`at ${url}`);
+      const tail = detail || (err instanceof Error ? err.message : 'Unknown error');
+      const message = `${parts.join(' ')}: ${tail}`;
+      // eslint-disable-next-line no-console
+      console.error('[mean-trends]', {
+        status, url, detail,
+        sessionId, pattern, column: selectedColumn, lengthMode, interpolation,
+      });
+      setError(message);
     } finally {
       setIsLoading(false);
     }

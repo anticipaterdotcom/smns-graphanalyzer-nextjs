@@ -412,14 +412,23 @@ class SavepointRequest(BaseModel):
 @app.post("/api/mean-trend")
 async def get_mean_trend(request: MeanTrendRequest):
     if request.session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Session {request.session_id!r} not found on /api/mean-trend "
+                "(expired or never created). Please re-upload your CSV."
+            ),
+        )
+
     analyzer = sessions[request.session_id]
     events = analyzer.find_pattern_events(tuple(request.pattern))
-    
+
     if not events:
-        raise HTTPException(status_code=400, detail="No events found for pattern")
-    
+        raise HTTPException(
+            status_code=400,
+            detail=f"No events found on /api/mean-trend for pattern {request.pattern} on column {request.column}",
+        )
+
     try:
         mean_trend, std_trend = analyzer.calculate_mean_trend(
             events, request.column, request.target_length
@@ -431,31 +440,40 @@ async def get_mean_trend(request: MeanTrendRequest):
             "event_count": len(events)
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"/api/mean-trend failed: {e}")
 
 
 @app.post("/api/mean-trend-extended")
 async def get_mean_trend_extended(request: MeanTrendExtendedRequest):
     if request.session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Session {request.session_id!r} not found on /api/mean-trend-extended "
+                "(expired or never created). Please re-upload your CSV."
+            ),
+        )
+
     analyzer = sessions[request.session_id]
     events = analyzer.find_pattern_events(tuple(request.pattern))
-    
+
     if not events:
-        raise HTTPException(status_code=400, detail="No events found for pattern")
-    
+        raise HTTPException(
+            status_code=400,
+            detail=f"No events found on /api/mean-trend-extended for pattern {request.pattern} on column {request.column}",
+        )
+
     try:
         result = analyzer.calculate_mean_trend_extended(
-            events, 
-            request.column, 
+            events,
+            request.column,
             request.target_length,
             request.length_mode,
             request.interpolation_method
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"/api/mean-trend-extended failed: {e}")
 
 
 @app.post("/api/normalize")
