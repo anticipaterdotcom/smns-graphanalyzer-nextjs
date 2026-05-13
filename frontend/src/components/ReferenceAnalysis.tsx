@@ -186,6 +186,7 @@ export default function ReferenceAnalysis({
   const [bottomEpsilon, setBottomEpsilon] = useState(0);
   const [bottomHighlightIndex, setBottomHighlightIndex] = useState<number | null>(null);
   const [bottomRemoveCandidate, setBottomRemoveCandidate] = useState<number | null>(null);
+  const [topRemoveCandidate, setTopRemoveCandidate] = useState<number | null>(null);
   const [bottomMinDistance, setBottomMinDistance] = useState(95);
   const [bottomAutoDetected, setBottomAutoDetected] = useState(false);
   const [bottomPatternEvents, setBottomPatternEvents] = useState<RefPatternEvent[]>([]);
@@ -671,12 +672,17 @@ export default function ReferenceAnalysis({
       if (index === undefined || index === null) return;
       const idx = Number(index);
       if (editAction === 'remove') {
-        removeTopExtremum(idx);
+        // Prefer the currently hovered candidate (the red ring the user sees)
+        // -- that's an unambiguous target, regardless of where Recharts
+        // resolved the click. Falls back to the click's own index.
+        const target = topRemoveCandidate ?? idx;
+        removeTopExtremum(target);
+        setTopRemoveCandidate(null);
       } else {
         addTopExtremum(idx, editAction === 'add-max' ? 'max' : 'min');
       }
     },
-    [editMode, editAction, addTopExtremum, removeTopExtremum]
+    [editMode, editAction, addTopExtremum, removeTopExtremum, topRemoveCandidate]
   );
 
   const addBottomExtremum = useCallback((clickIndex: number, type: 'max' | 'min') => {
@@ -728,12 +734,17 @@ export default function ReferenceAnalysis({
       if (index === undefined || index === null) return;
       const idx = Number(index);
       if (bottomEditAction === 'remove') {
-        removeBottomExtremum(idx);
+        // Prefer the currently hovered candidate (the red ring the user sees)
+        // -- that's an unambiguous target, regardless of where Recharts
+        // resolved the click. Falls back to the click's own index.
+        const target = bottomRemoveCandidate ?? idx;
+        removeBottomExtremum(target);
+        setBottomRemoveCandidate(null);
       } else {
         addBottomExtremum(idx, bottomEditAction === 'add-max' ? 'max' : 'min');
       }
     },
-    [bottomEditMode, bottomEditAction, bottomExtrema, addBottomExtremum, removeBottomExtremum]
+    [bottomEditMode, bottomEditAction, bottomExtrema, addBottomExtremum, removeBottomExtremum, bottomRemoveCandidate]
   );
 
   const detectPatterns = useCallback(async (extrema: Extremum[], pattern: 'low-high-low' | 'high-low-high'): Promise<RefPatternEvent[]> => {
@@ -1146,20 +1157,41 @@ export default function ReferenceAnalysis({
             }}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={topChartData}>
+              <LineChart
+                data={topChartData}
+                onClick={handleTopChartClick}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                onMouseMove={(e: any) => {
+                  if (!editMode || editAction !== 'remove' || !e) {
+                    setTopRemoveCandidate(null);
+                    return;
+                  }
+                  const idx = e.activePayload?.[0]?.payload?.index ?? e.activeLabel;
+                  if (idx === undefined || idx === null) { setTopRemoveCandidate(null); return; }
+                  const numIdx = Number(idx);
+                  const closest = topExtrema.reduce<Extremum | null>((best, ext) =>
+                    !best || Math.abs(ext.index - numIdx) < Math.abs(best.index - numIdx) ? ext : best, null);
+                  if (closest && Math.abs(closest.index - numIdx) <= 50) {
+                    setTopRemoveCandidate(closest.index);
+                  } else {
+                    setTopRemoveCandidate(null);
+                  }
+                }}
+                onMouseLeave={() => setTopRemoveCandidate(null)}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
-                <XAxis 
+                <XAxis
                   dataKey="index"
                   type="number"
-                  stroke="#64748b" 
+                  stroke="#64748b"
                   fontSize={10}
                   domain={[getXAxisConfig.topMin, getXAxisConfig.topMax]}
                   ticks={getXAxisConfig.ticks}
                   allowDataOverflow={true}
                 />
-                <YAxis 
-                  stroke="#64748b" 
-                  fontSize={10} 
+                <YAxis
+                  stroke="#64748b"
+                  fontSize={10}
                   domain={topYDomain}
                   allowDataOverflow={true}
                   tickFormatter={(v: number) => {
@@ -1209,30 +1241,32 @@ export default function ReferenceAnalysis({
                   isAnimationActive={false}
                 />
                 {refMaxima.map((ext: Extremum, i: number) => {
+                  const isRemoveTarget = topRemoveCandidate === ext.index;
                   const isHighlighted = highlightedExtremumIndex === ext.index || localHighlightIndex === ext.index;
                   return (
                     <ReferenceDot
                       key={`max-${i}`}
                       x={ext.index}
                       y={ext.value}
-                      r={isHighlighted ? 10 : 6}
-                      fill="#3b82f6"
-                      stroke={isHighlighted ? '#fff' : '#0f172a'}
-                      strokeWidth={isHighlighted ? 3 : 2}
+                      r={isRemoveTarget ? 10 : isHighlighted ? 10 : 6}
+                      fill={isRemoveTarget ? '#ef4444' : '#3b82f6'}
+                      stroke={isRemoveTarget ? '#fff' : isHighlighted ? '#fff' : '#0f172a'}
+                      strokeWidth={isRemoveTarget ? 3 : isHighlighted ? 3 : 2}
                     />
                   );
                 })}
                 {refMinima.map((ext: Extremum, i: number) => {
+                  const isRemoveTarget = topRemoveCandidate === ext.index;
                   const isHighlighted = highlightedExtremumIndex === ext.index || localHighlightIndex === ext.index;
                   return (
                     <ReferenceDot
                       key={`min-${i}`}
                       x={ext.index}
                       y={ext.value}
-                      r={isHighlighted ? 10 : 6}
-                      fill="#10b981"
-                      stroke={isHighlighted ? '#fff' : '#0f172a'}
-                      strokeWidth={isHighlighted ? 3 : 2}
+                      r={isRemoveTarget ? 10 : isHighlighted ? 10 : 6}
+                      fill={isRemoveTarget ? '#ef4444' : '#10b981'}
+                      stroke={isRemoveTarget ? '#fff' : isHighlighted ? '#fff' : '#0f172a'}
+                      strokeWidth={isRemoveTarget ? 3 : isHighlighted ? 3 : 2}
                     />
                   );
                 })}
