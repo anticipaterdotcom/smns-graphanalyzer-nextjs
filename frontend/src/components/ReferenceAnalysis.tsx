@@ -457,10 +457,17 @@ export default function ReferenceAnalysis({
           data = result.data;
         }
         setBottomData(data);
-        // Clear extrema when column changes -- user must click Search to detect
         if (columnChanged) {
-          setAllBottomExtrema(prev => ({ ...prev, [bottomColumn]: [] }));
-          setBottomAutoDetected(false);
+          const stored = allBottomExtrema[bottomColumn];
+          if (stored && stored.length > 0) {
+            // Restore previously edited extrema for this column.
+            setBottomAutoDetected(false);
+          } else if (data.length > 0) {
+            // First visit for this column: auto-detect once so the user sees something.
+            const detected = findExtremaLocal(data, bottomMinDistance);
+            setBottomExtrema(detected);
+            setBottomAutoDetected(true);
+          }
         }
       } catch (err) {
         console.error('Failed to load bottom chart data:', err);
@@ -472,14 +479,15 @@ export default function ReferenceAnalysis({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, bottomColumn, analyzedColumn, analyzedData]);
 
-  // Auto-detect extrema when minDistance changes (only if we have data)
+  // Auto-detect extrema only when the user changes the Min Distance slider.
+  // Do NOT re-detect when bottomExtrema becomes empty -- that would resurrect
+  // points the user just removed and overwrite manual edits.
   const prevMinDistRef = useRef<number>(bottomMinDistance);
   useEffect(() => {
     if (bottomData.length === 0) return;
-    // Run on minDistance change or first load (when no extrema yet)
     const minDistChanged = prevMinDistRef.current !== bottomMinDistance;
     prevMinDistRef.current = bottomMinDistance;
-    if (minDistChanged || bottomExtrema.length === 0) {
+    if (minDistChanged) {
       searchBottomExtrema();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
