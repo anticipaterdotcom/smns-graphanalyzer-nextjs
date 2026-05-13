@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:offline": "NEXT_PUBLIC_OFFLINE_BUILD=1 NEXT_PUBLIC_API_MODE=local next build",
+    "package:offline": "npm run build:offline && cd out && zip -qr ../graph-analyzer-offline.zip . && cd .. && echo 'Wrote frontend/graph-analyzer-offline.zip'",
     "start": "next start",
     "lint": "eslint"
   },
