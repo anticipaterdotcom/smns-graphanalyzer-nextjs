@@ -14,7 +14,7 @@ import {
   Legend,
 } from 'recharts';
 import { TrendingUp, Download, X, Upload, Image } from 'lucide-react';
-import { MeanTrendExtendedResponse, getMeanTrendExtended } from '@/lib/api';
+import { MeanTrendExtendedResponse, getMeanTrendExtended, Extremum } from '@/lib/api';
 
 interface MeanTrendsAnalyzerProps {
   sessionId: string | null;
@@ -22,8 +22,11 @@ interface MeanTrendsAnalyzerProps {
   column: number;
   totalColumns: number;
   events: { start_index: number; end_index: number }[];
+  frequency?: number;
   onClose?: () => void;
 }
+
+type CycleSource = 'main' | 'reference';
 
 type PlotView = 'mean' | 'overlay' | 'raw';
 type LengthMode = 'average' | 'percentage';
@@ -41,6 +44,7 @@ export default function MeanTrendsAnalyzer({
   column,
   totalColumns,
   events,
+  frequency,
   onClose,
 }: MeanTrendsAnalyzerProps) {
   const [selectedColumn, setSelectedColumn] = useState<number>(column);
@@ -52,9 +56,31 @@ export default function MeanTrendsAnalyzer({
   const [plotView, setPlotView] = useState<PlotView>('mean');
   const [lengthMode, setLengthMode] = useState<LengthMode>('average');
   const [interpolation, setInterpolation] = useState<InterpolationMethod>('linear');
-  
+  const [cycleSource, setCycleSource] = useState<CycleSource>('main');
+
   const chartRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Read manual reference extrema (per column) from the ReferenceAnalysis
+  // panel's localStorage bucket. The reference panel writes
+  // `ref-bottom-extrema:${sessionId}` as Record<columnIndex, Extremum[]>.
+  // We re-read on every render so manual edits propagate without a refresh.
+  const referenceExtremaByColumn = useMemo<Record<number, Extremum[]>>(() => {
+    if (!sessionId || typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem(`ref-bottom-extrema:${sessionId}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+    // selectedColumn is in deps so the lookup refreshes when the user
+    // switches columns inside the Mean Trends panel.
+  }, [sessionId, selectedColumn, cycleSource]);
+
+  const referenceExtremaForColumn = useMemo<Extremum[]>(() => {
+    const e = referenceExtremaByColumn[selectedColumn];
+    return Array.isArray(e) ? e : [];
+  }, [referenceExtremaByColumn, selectedColumn]);
+
+  const referenceAvailable = referenceExtremaForColumn.length >= 3;
 
   const loadFromSession = useCallback(async () => {
     if (!sessionId || events.length < 2) return;
@@ -63,6 +89,8 @@ export default function MeanTrendsAnalyzer({
     setError(null);
     setCsvData(null);
 
+    const useReference = cycleSource === 'reference' && referenceAvailable;
+
     try {
       const result = await getMeanTrendExtended(
         sessionId,
@@ -70,12 +98,14 @@ export default function MeanTrendsAnalyzer({
         selectedColumn,
         undefined,
         lengthMode,
-        interpolation
+        interpolation,
+        useReference ? referenceExtremaForColumn : undefined,
+        useReference ? frequency : undefined,
       );
       setData(result);
     } catch (err) {
-      // Surface the real backend detail (which endpoint, which session) instead
-      // of axios' generic "Request failed with status code 404".
+      // Surface the real backend detail (which endpoint, which session)
+      // instead of axios' generic "Request failed with status code 404".
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const e = err as any;
       const status = e?.response?.status;
@@ -91,12 +121,13 @@ export default function MeanTrendsAnalyzer({
       console.error('[mean-trends]', {
         status, url, detail,
         sessionId, pattern, column: selectedColumn, lengthMode, interpolation,
+        cycleSource, usedReferenceExtrema: useReference ? referenceExtremaForColumn.length : 0,
       });
       setError(message);
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation]);
+  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation, cycleSource, referenceAvailable, referenceExtremaForColumn, frequency]);
 
 
   useEffect(() => {
@@ -444,6 +475,45 @@ export default function MeanTrendsAnalyzer({
             </button>
           )}
         </div>
+      </div>
+
+      {/* Cycle source toggle */}
+      <div className="mb-4 p-3 rounded-lg bg-neutral-900/40 border border-white/10 flex flex-wrap items-center gap-3">
+        <span className="text-xs text-neutral-400 uppercase tracking-wide">Cycle Source</span>
+        <div className="flex rounded-lg overflow-hidden border border-white/10">
+          <button
+            onClick={() => setCycleSource('main')}
+            className={`px-3 py-1.5 text-xs transition-colors ${
+              cycleSource === 'main'
+                ? 'bg-purple-600 text-white'
+                : 'bg-neutral-800 text-neutral-400 hover:text-white'
+            }`}
+          >
+            Main plot
+          </button>
+          <button
+            onClick={() => setCycleSource('reference')}
+            disabled={!referenceAvailable}
+            className={`px-3 py-1.5 text-xs transition-colors ${
+              cycleSource === 'reference'
+                ? 'bg-purple-600 text-white'
+                : 'bg-neutral-800 text-neutral-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed'
+            }`}
+            title={referenceAvailable
+              ? `Use the ${referenceExtremaForColumn.length} manual extrema from the Reference panel for column ${selectedColumn + 1}`
+              : `No manual reference extrema saved for column ${selectedColumn + 1}. Open the Reference panel and edit extrema first.`}
+          >
+            Reference column {selectedColumn + 1}
+            {referenceAvailable && (
+              <span className="ml-1 text-[10px] opacity-80">({referenceExtremaForColumn.length})</span>
+            )}
+          </button>
+        </div>
+        <span className="text-[11px] text-neutral-500">
+          {cycleSource === 'reference' && referenceAvailable
+            ? 'Cycles are segmented from your manual edits on this column.'
+            : 'Cycles are segmented from the main plot\'s extrema.'}
+        </span>
       </div>
 
       {/* Controls */}
