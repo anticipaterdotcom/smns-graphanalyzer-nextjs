@@ -755,6 +755,7 @@ export default function Home() {
                   column={currentColumn}
                   totalColumns={columns}
                   events={events}
+                  frequency={currentFrequency}
                   onClose={() => { setShowMeanTrendsAnalyzer(false); setShowMainTrend(true); }}
                 />
               </div>

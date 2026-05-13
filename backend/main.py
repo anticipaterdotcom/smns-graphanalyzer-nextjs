@@ -398,6 +398,14 @@ class MeanTrendExtendedRequest(BaseModel):
     target_length: Optional[int] = None
     length_mode: str = 'average'  # 'average' or 'percentage'
     interpolation_method: str = 'linear'  # 'linear' or 'spline'
+    # When provided, segment cycles from these extrema (the active reference
+    # series, including any manual edits) instead of the session's analyzer
+    # extrema (which always come from the main-analyzed column). Empty list
+    # or omitted means "use the session's main extrema".
+    cycle_extrema: Optional[List[ExtremumIn]] = None
+    # Frame rate for converting indices to times when cycle_extrema is given.
+    # Falls back to the session's stored frequency.
+    frequency: Optional[float] = None
 
 
 class NormalizeRequest(BaseModel):
@@ -437,25 +445,52 @@ async def get_mean_trend(request: MeanTrendRequest):
 @app.post("/api/mean-trend-extended")
 async def get_mean_trend_extended(request: MeanTrendExtendedRequest):
     if request.session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Session {request.session_id!r} not found on /api/mean-trend-extended "
+                "(expired or never created). Please re-upload your CSV."
+            ),
+        )
+
     analyzer = sessions[request.session_id]
-    events = analyzer.find_pattern_events(tuple(request.pattern))
-    
+
+    # If the caller supplied cycle_extrema (typically the active reference
+    # series with any manual edits), segment cycles from those instead of the
+    # session's main-column extrema. Cycles need at least three extrema to
+    # form one pattern triplet.
+    if request.cycle_extrema and len(request.cycle_extrema) >= 3:
+        extrema_objs = [
+            Extremum(value=e.value, index=e.index, extremum_type=e.type)
+            for e in request.cycle_extrema
+        ]
+        freq = request.frequency or analyzer.frequency
+        time_per_frame = 1.0 / freq if freq > 0 else analyzer.time_per_frame
+        events = compute_pattern_events(extrema_objs, tuple(request.pattern), time_per_frame)
+    else:
+        events = analyzer.find_pattern_events(tuple(request.pattern))
+
     if not events:
-        raise HTTPException(status_code=400, detail="No events found for pattern")
-    
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No events found on /api/mean-trend-extended for pattern {request.pattern} "
+                f"on column {request.column} "
+                f"(source={'reference extrema' if request.cycle_extrema else 'main extrema'})"
+            ),
+        )
+
     try:
         result = analyzer.calculate_mean_trend_extended(
-            events, 
-            request.column, 
+            events,
+            request.column,
             request.target_length,
             request.length_mode,
             request.interpolation_method
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"/api/mean-trend-extended failed: {e}")
 
 
 @app.post("/api/normalize")

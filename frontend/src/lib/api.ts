@@ -358,7 +358,9 @@ export async function getMeanTrendExtended(
   column: number,
   targetLength?: number,
   lengthMode: 'average' | 'percentage' = 'average',
-  interpolationMethod: 'linear' | 'spline' = 'linear'
+  interpolationMethod: 'linear' | 'spline' = 'linear',
+  cycleExtrema?: Extremum[],
+  frequency?: number,
 ): Promise<MeanTrendExtendedResponse> {
   const response = await api.post('/api/mean-trend-extended', {
     session_id: sessionId,
@@ -367,6 +369,8 @@ export async function getMeanTrendExtended(
     target_length: targetLength,
     length_mode: lengthMode,
     interpolation_method: interpolationMethod,
+    cycle_extrema: cycleExtrema && cycleExtrema.length > 0 ? cycleExtrema : undefined,
+    frequency,
   });
   return response.data;
 }
