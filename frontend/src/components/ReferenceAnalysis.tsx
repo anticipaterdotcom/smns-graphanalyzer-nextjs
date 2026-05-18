@@ -722,7 +722,7 @@ export default function ReferenceAnalysis({
       const filtered = prev.filter(e => e.index !== actualIdx);
       return [...filtered, newExt].sort((a, b) => a.index - b.index);
     });
-  }, [bottomData, bottomEpsilon]);
+  }, [bottomData, bottomEpsilon, setBottomExtrema]);
 
   const removeBottomExtremum = useCallback((targetIndex: number) => {
     setBottomExtrema(prev => {
@@ -737,7 +737,7 @@ export default function ReferenceAnalysis({
       }
       return prev;
     });
-  }, []);
+  }, [setBottomExtrema]);
 
   const handleBottomChartClick = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

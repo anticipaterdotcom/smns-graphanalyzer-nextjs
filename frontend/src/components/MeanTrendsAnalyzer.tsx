@@ -261,12 +261,17 @@ export default function MeanTrendsAnalyzer({
 
   const meanChartData = useMemo(() => {
     if (!data) return [];
-    return data.mean.map((mean, index) => ({
-      index: index + 1,
-      mean,
-      upper: mean + data.std[index],
-      lower: mean - data.std[index],
-    }));
+    return data.mean.map((mean, index) => {
+      const upper = mean + data.std[index];
+      const lower = mean - data.std[index];
+      return {
+        index: index + 1,
+        mean,
+        upper,
+        lower,
+        band: [lower, upper] as [number, number],
+      };
+    });
   }, [data]);
 
   const getXAxisConfig = useMemo(() => {
@@ -311,11 +316,14 @@ export default function MeanTrendsAnalyzer({
   const overlayChartData = useMemo(() => {
     if (!data) return [];
     return data.mean.map((mean, index) => {
-      const point: Record<string, number> = {
+      const upper = mean + data.std[index];
+      const lower = mean - data.std[index];
+      const point: Record<string, number | [number, number]> = {
         index: index + 1,
         mean,
-        upper: mean + data.std[index],
-        lower: mean - data.std[index],
+        upper,
+        lower,
+        band: [lower, upper],
       };
       data.normalized_segments.forEach((seg, i) => {
         point[`cycle${i}`] = seg[index];
@@ -657,13 +665,22 @@ export default function MeanTrendsAnalyzer({
                   borderRadius: '12px',
                   color: '#fff',
                 }}
-                formatter={(value: number, name: string) => {
-                  const labels: Record<string, string> = { mean: 'Mean', upper: 'Upper (μ+σ)', lower: 'Lower (μ-σ)' };
-                  return [value.toFixed(4), labels[name] || name];
+                formatter={(value: unknown, name: string) => {
+                  const labels: Record<string, string> = { mean: 'Mean', upper: 'Upper (μ+σ)', lower: 'Lower (μ-σ)', band: 'Band (μ±σ)' };
+                  let formatted: string;
+                  if (Array.isArray(value)) {
+                    const a = typeof value[0] === 'number' ? value[0].toFixed(4) : String(value[0]);
+                    const b = typeof value[1] === 'number' ? value[1].toFixed(4) : String(value[1]);
+                    formatted = `${a} … ${b}`;
+                  } else if (typeof value === 'number') {
+                    formatted = value.toFixed(4);
+                  } else {
+                    formatted = String(value);
+                  }
+                  return [formatted, labels[name] || name];
                 }}
               />
-              <Area type="monotone" dataKey="upper" stroke="none" fill="#8b5cf6" fillOpacity={0.2} isAnimationActive={false} />
-              <Area type="monotone" dataKey="lower" stroke="none" fill="#0f172a" fillOpacity={1} isAnimationActive={false} />
+              <Area type="monotone" dataKey="band" stroke="none" fill="#8b5cf6" fillOpacity={0.2} isAnimationActive={false} activeDot={false} />
               <Line type="monotone" dataKey="upper" stroke="#8b5cf6" strokeWidth={1} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="lower" stroke="#8b5cf6" strokeWidth={1} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="mean" stroke="#ec4899" strokeWidth={2.5} dot={false} isAnimationActive={false} />
@@ -690,8 +707,7 @@ export default function MeanTrendsAnalyzer({
                   color: '#fff',
                 }}
               />
-              <Area type="monotone" dataKey="upper" stroke="none" fill="#8b5cf6" fillOpacity={0.15} isAnimationActive={false} />
-              <Area type="monotone" dataKey="lower" stroke="none" fill="#0f172a" fillOpacity={1} isAnimationActive={false} />
+              <Area type="monotone" dataKey="band" stroke="none" fill="#8b5cf6" fillOpacity={0.15} isAnimationActive={false} activeDot={false} />
               {data.normalized_segments.map((_, i) => (
                 <Line
                   key={i}
