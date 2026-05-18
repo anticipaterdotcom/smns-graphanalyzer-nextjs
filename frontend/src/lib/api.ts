@@ -410,9 +410,10 @@ export async function getMeanTrendExtended(
   interpolationMethod: 'linear' | 'spline' = 'linear',
   cycleExtrema?: Extremum[],
   frequency?: number,
+  smooth: boolean = false,
 ): Promise<MeanTrendExtendedResponse> {
   if (useLocal()) return local.localGetMeanTrendExtended(
-    sessionId, pattern, column, targetLength, lengthMode, interpolationMethod, cycleExtrema, frequency,
+    sessionId, pattern, column, targetLength, lengthMode, interpolationMethod, cycleExtrema, frequency, smooth,
   );
   const response = await api.post('/api/mean-trend-extended', {
     session_id: sessionId,
@@ -423,6 +424,7 @@ export async function getMeanTrendExtended(
     interpolation_method: interpolationMethod,
     cycle_extrema: cycleExtrema && cycleExtrema.length > 0 ? cycleExtrema : undefined,
     frequency,
+    smooth,
   });
   return response.data;
 }

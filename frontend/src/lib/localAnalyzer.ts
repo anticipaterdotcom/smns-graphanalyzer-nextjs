@@ -180,7 +180,7 @@ function cubicSplineInterp(x_new: number[], x_old: number[], y_old: number[]): n
 // in analyzer._smooth_for_spline: smooth the cubic-spline output so spline mode
 // visibly differs from linear. Implemented via Gram polynomial weights to avoid
 // the full matrix inversion (closed-form for polyorder=3 at the centre point).
-function savgolFilter(values: number[], windowOverride?: number): number[] {
+export function savgolFilter(values: number[], windowOverride?: number): number[] {
   const n = values.length;
   if (n < 7) return values.slice();
   let window = windowOverride ?? Math.max(5, (Math.round(n * 0.15) | 1));
@@ -448,6 +448,7 @@ export class LocalAnalyzer {
     targetLength?: number,
     lengthMode: 'average' | 'percentage' = 'average',
     interpolationMethod: 'linear' | 'spline' = 'linear',
+    smooth: boolean = false,
   ): MeanTrendExtendedResult {
     if (!this.rawData || events.length === 0) throw new Error('No data or events');
 
@@ -468,7 +469,7 @@ export class LocalAnalyzer {
       if (interpolationMethod === 'spline' && segment.length >= 4) {
         try {
           let resampled = cubicSplineInterp(xNew, xOld, segment);
-          resampled = savgolFilter(resampled);
+          if (smooth) resampled = savgolFilter(resampled);
           return resampled;
         } catch {
           return linearInterp(xNew, xOld, segment);

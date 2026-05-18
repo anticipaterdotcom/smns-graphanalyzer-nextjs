@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { TrendingUp, Download, X, Upload, Image } from 'lucide-react';
 import { MeanTrendExtendedResponse, getMeanTrendExtended, Extremum } from '@/lib/api';
+import { savgolFilter } from '@/lib/localAnalyzer';
 
 interface MeanTrendsAnalyzerProps {
   sessionId: string | null;
@@ -56,6 +57,7 @@ export default function MeanTrendsAnalyzer({
   const [plotView, setPlotView] = useState<PlotView>('mean');
   const [lengthMode, setLengthMode] = useState<LengthMode>('average');
   const [interpolation, setInterpolation] = useState<InterpolationMethod>('linear');
+  const [smoothing, setSmoothing] = useState<boolean>(false);
   const [cycleSource, setCycleSource] = useState<CycleSource>('main');
 
   const chartRef = useRef<HTMLDivElement>(null);
@@ -118,6 +120,7 @@ export default function MeanTrendsAnalyzer({
         interpolation,
         useReference ? referenceExtremaForColumn : undefined,
         useReference ? frequency : undefined,
+        smoothing,
       );
       setData(result);
     } catch (err) {
@@ -145,7 +148,7 @@ export default function MeanTrendsAnalyzer({
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation, cycleSource, referenceAvailable, referenceExtremaForColumn, referencePattern, frequency]);
+  }, [sessionId, pattern, selectedColumn, events.length, lengthMode, interpolation, smoothing, cycleSource, referenceAvailable, referenceExtremaForColumn, referencePattern, frequency]);
 
 
   useEffect(() => {
@@ -171,7 +174,7 @@ export default function MeanTrendsAnalyzer({
         const low = Math.floor(pos);
         const high = Math.ceil(pos);
         const frac = pos - low;
-        
+
         if (interpolation === 'spline' && segment.length >= 4) {
           const p0 = segment[Math.max(0, low - 1)];
           const p1 = segment[low];
@@ -182,7 +185,7 @@ export default function MeanTrendsAnalyzer({
           result.push(segment[low] + frac * (segment[high] - segment[low]));
         }
       }
-      return result;
+      return smoothing && interpolation === 'spline' ? savgolFilter(result) : result;
     });
     
     const mean: number[] = [];
@@ -205,7 +208,7 @@ export default function MeanTrendsAnalyzer({
       event_count: segments.length,
       lengths,
     });
-  }, [lengthMode, interpolation]);
+  }, [lengthMode, interpolation, smoothing]);
 
   useEffect(() => {
     if (csvData && csvData.length > 0) {
@@ -610,6 +613,21 @@ export default function MeanTrendsAnalyzer({
               Spline
             </button>
           </div>
+          <label
+            className={`flex items-center gap-2 text-xs select-none ${
+              interpolation === 'spline' ? 'text-neutral-300 cursor-pointer' : 'text-neutral-600 cursor-not-allowed'
+            }`}
+            title="Apply Savitzky-Golay smoothing (polyorder=3, window ≈ 15% of cycle length) after the cubic spline. Only affects Spline mode."
+          >
+            <input
+              type="checkbox"
+              checked={smoothing}
+              disabled={interpolation !== 'spline'}
+              onChange={(e) => setSmoothing(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-white/20 bg-neutral-800 accent-emerald-600 disabled:opacity-40"
+            />
+            <span>Savgol smoothing</span>
+          </label>
         </div>
 
         {/* Plot View */}

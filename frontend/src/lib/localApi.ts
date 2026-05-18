@@ -230,6 +230,7 @@ export async function localGetMeanTrendExtended(
   interpolationMethod: 'linear' | 'spline' = 'linear',
   cycleExtrema?: Extremum[],
   frequency?: number,
+  smooth: boolean = false,
 ): Promise<MeanTrendExtendedResponse> {
   const a = getSession(sessionId);
   const p: [number, number, number] = [pattern[0], pattern[1], pattern[2]];
@@ -249,7 +250,7 @@ export async function localGetMeanTrendExtended(
     );
   }
   const r: MeanTrendExtendedResult = a.calculateMeanTrendExtended(
-    events, column, targetLength, lengthMode, interpolationMethod,
+    events, column, targetLength, lengthMode, interpolationMethod, smooth,
   );
   return {
     mean: r.mean,
